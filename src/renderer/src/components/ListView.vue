@@ -1,33 +1,66 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { label } from '@shared/dates'
-import { listById, listColor, sorted } from '@shared/query'
+import { sortedByIndex } from '@shared/query'
 import { INBOX_NAME, PRIO_NAME, STATUS_NAME, type TodoItem } from '@shared/types'
-import { completeTodo } from '@shared/store-ops'
+import { completeTodo, removeTodos } from '@shared/store-ops'
 import { mutate, state } from '../store/data'
+import { index } from '../store/index'
 import { ui } from '../store/ui'
 import { clearSelection, selectedIds, setSelection, toggleSelection } from '../lib/selection'
-import { removeTodos } from '@shared/store-ops'
+import { useVirtual } from '../lib/virtual'
 
-const rows = computed(() => sorted(state.store, ui.view, ui.search))
+/** 行高固定 32px(见样式 .row),虚拟滚动据此窗口化 */
+const ROW_H = 32
+
+const rows = computed(() => sortedByIndex(index.value, ui.view))
 const lastClicked = ref<string | null>(null)
 
+const scroller = ref<HTMLElement | null>(null)
+const scrollTop = ref(0)
+const viewportH = ref(400)
+const virtual = useVirtual<TodoItem>({
+  items: () => rows.value,
+  keyOf: (t) => t.id,
+  scrollTop,
+  viewportH,
+  estimateOf: () => ROW_H,
+  overscan: 8
+})
+
 watch(
-  () => ui.view,
+  () => [ui.view, ui.search],
   () => {
     clearSelection()
     lastClicked.value = null
+    scrollTop.value = 0
+    const host = scroller.value
+    if (host) host.scrollTop = 0
   }
 )
+
+onMounted(() => {
+  const host = scroller.value
+  if (host) viewportH.value = host.clientHeight
+  clearSelection()
+  new ResizeObserver(() => {
+    if (scroller.value) viewportH.value = scroller.value.clientHeight
+  }).observe(scroller.value as Element)
+})
+
+function onScroll(): void {
+  const host = scroller.value
+  if (host) scrollTop.value = host.scrollTop
+}
 
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every((r) => selectedIds.has(r.id)))
 
 function nameOf(item: TodoItem): string {
-  return listById(state.store, item.lid)?.name ?? INBOX_NAME
+  return index.value.listOf.get(item.lid)?.name ?? INBOX_NAME
 }
 
 function colorOf(item: TodoItem): string {
-  return listColor(state.store, item.lid)
+  return index.value.listOf.get(item.lid)?.color ?? '#9AA0A8'
 }
 
 function toggleAll(): void {
@@ -68,8 +101,6 @@ function onDeleteSelected(): void {
 function onOpen(item: TodoItem): void {
   ui.dialog = { mode: 'edit', id: item.id }
 }
-
-onMounted(() => clearSelection())
 </script>
 
 <template>
@@ -92,40 +123,44 @@ onMounted(() => clearSelection())
       <label class="cell check"><input type="checkbox" :checked="allSelected" @change="toggleAll" /></label>
       <span class="cell title">任务</span>
       <span class="cell date">日期</span>
-      <span class="cell list">清单</span>
+      <span class="cell lname">清单</span>
       <span class="cell prio">优先级</span>
       <span class="cell note">备注</span>
     </div>
 
-    <div class="rows thin-scroll">
-      <div
-        v-for="item in rows"
-        :key="item.id"
-        class="row"
-        :class="{ selected: selectedIds.has(item.id) }"
-        :data-row="item.id"
-        @click="onRowCheck($event, item)"
-        @dblclick="onOpen(item)"
-      >
-        <span class="cell check" @click.stop="onRowCheck($event, item)">
-          <input type="checkbox" :checked="selectedIds.has(item.id)" @click.stop="onRowCheck($event, item)" />
-        </span>
-        <span class="cell title">
-          <button class="circle" :class="{ checked: item.status === 1 }" @click="onComplete($event, item)">
-            <span v-if="item.status === 1">✓</span>
-          </button>
-          <span class="ttext">{{ item.title }}</span>
-          <span v-if="item.subtasks.length > 0" class="subs">
-            {{ item.subtasks.filter((s) => s.done).length }}/{{ item.subtasks.length }}
-          </span>
-        </span>
-        <span class="cell date">{{ label(item.date) }}</span>
-        <span class="cell list"><i class="dot" :style="{ background: colorOf(item) }" />{{ nameOf(item) }}</span>
-        <span class="cell prio">{{ PRIO_NAME[item.prio] }}</span>
-        <span class="cell note">{{ item.status !== 0 ? STATUS_NAME[item.status] : item.note }}</span>
-      </div>
-
+    <div ref="scroller" class="rows thin-scroll" @scroll="onScroll">
       <div v-if="rows.length === 0" class="empty">此视图暂无任务</div>
+
+      <template v-else>
+        <div :style="{ height: `${virtual.state.value.padTop}px` }" />
+        <div
+          v-for="v in virtual.state.value.visible"
+          :key="v.item.id"
+          class="row"
+          :class="{ selected: selectedIds.has(v.item.id) }"
+          :data-row="v.item.id"
+          @click="onRowCheck($event, v.item)"
+          @dblclick="onOpen(v.item)"
+        >
+          <span class="cell check" @click.stop="onRowCheck($event, v.item)">
+            <input type="checkbox" :checked="selectedIds.has(v.item.id)" @click.stop="onRowCheck($event, v.item)" />
+          </span>
+          <span class="cell title">
+            <button class="circle" :class="{ checked: v.item.status === 1 }" @click="onComplete($event, v.item)">
+              <span v-if="v.item.status === 1">✓</span>
+            </button>
+            <span class="ttext">{{ v.item.title }}</span>
+            <span v-if="v.item.subtasks.length > 0" class="subs">
+              {{ v.item.subtasks.filter((s) => s.done).length }}/{{ v.item.subtasks.length }}
+            </span>
+          </span>
+          <span class="cell date">{{ label(v.item.date) }}</span>
+          <span class="cell lname"><i class="dot" :style="{ background: colorOf(v.item) }" />{{ nameOf(v.item) }}</span>
+          <span class="cell prio">{{ PRIO_NAME[v.item.prio] }}</span>
+          <span class="cell note">{{ v.item.status !== 0 ? STATUS_NAME[v.item.status] : v.item.note }}</span>
+        </div>
+        <div :style="{ height: `${virtual.state.value.padBottom}px` }" />
+      </template>
     </div>
   </div>
 </template>
@@ -224,6 +259,13 @@ onMounted(() => clearSelection())
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* 清单单元格:圆点 + 名称横向排列(类名不能叫 .list —— 与根容器 .list 冲突,
+   会把 flex-direction 变成 column、高度撑满整行) */
+.lname {
+  display: flex;
+  align-items: center;
 }
 
 .ttext {

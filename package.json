@@ -13,6 +13,8 @@
     "test": "node --import ./scripts/ts-resolve-hook.mjs --experimental-strip-types --test src/shared/store-ops.test.ts",
     "icon": "node scripts/make-icon.mjs",
     "smoke": "node scripts/run-smokes.mjs",
+    "perf": "node scripts/perf-compare.mjs current 3",
+    "perf:data": "node scripts/gen-perf-data.mjs",
     "dist:win7-32": "npm run build && node scripts/package-win.mjs win7-ia32",
     "dist:win7-64": "npm run build && node scripts/package-win.mjs win7-x64",
     "dist:win10-32": "npm run build && node scripts/package-win.mjs win10-ia32",

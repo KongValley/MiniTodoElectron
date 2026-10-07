@@ -6,7 +6,7 @@ import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { CH } from '@shared/api'
-import { emptyStore, normalizeStore } from '@shared/store-ops'
+import { emptyStore } from '@shared/store-ops'
 import { countDue } from '@shared/query'
 import type { Store } from '@shared/types'
 import { dataDir, oldStorePath } from './lib/paths'
@@ -59,6 +59,15 @@ async function pickAndReadStore(win: BrowserWindow, preset?: string) {
   return { canceled: false as const, ...result }
 }
 
+/** 落盘前的轻量形状校验:确认顶层结构可用,不做逐条归一化 */
+function assertStoreShape(v: unknown): asserts v is Store {
+  const o = v as Record<string, unknown> | null
+  if (!o || typeof o !== 'object') throw new Error('数据格式非法:不是对象')
+  for (const k of ['groups', 'lists', 'todos'] as const) {
+    if (!Array.isArray(o[k])) throw new Error(`数据格式非法:${k} 不是数组`)
+  }
+}
+
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle(CH.storeLoad, () =>
     guard(async () => {
@@ -72,13 +81,18 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
 
   ipcMain.handle(CH.storeSave, (_e, payload: unknown) =>
     guard(async () => {
-      // 不信任渲染层:归一化后再落盘
-      const store: Store = normalizeStore(payload)
+      // 渲染层以序列化字符串发送(传对象时结构化克隆 7.5 万个对象要 85ms,字符串只要 7ms)
+      const raw: unknown = typeof payload === 'string' ? JSON.parse(payload) : payload
+      // 轻量校验而非逐条 normalizeStore:渲染层由 store-ops 纯函数写入,结构本就合法;
+      // 5000 条时逐条归一化要 ~115ms。真正不可信的数据(导入文件)走 store:import,那里仍全量归一化。
+      assertStoreShape(raw)
+      const store: Store = raw
       await saveStore(store)
       currentStore = store
       const win = getWindow()
       if (win) setTodayCount(win, countDue(store))
-      return { ok: true, store }
+      // 刻意不回传 store:渲染层已有同一份数据,回传会让每次保存多克隆 ~1MB
+      return { ok: true }
     })
   )
 
@@ -107,7 +121,9 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
         filters: [{ name: 'JSON 数据', extensions: ['json'] }]
       })
       if (canceled || !filePath) return { ok: true, canceled: true }
-      await exportToFile(filePath, normalizeStore(payload))
+      // 渲染层传的是当前 store 对象;导出与保存同源,只做形状校验,不逐条归一化
+      assertStoreShape(payload)
+      await exportToFile(filePath, payload)
       return { ok: true, canceled: false, path: filePath }
     })
   )

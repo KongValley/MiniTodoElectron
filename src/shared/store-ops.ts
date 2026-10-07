@@ -187,9 +187,10 @@ export function addTodo(store: Store, patch: Partial<TodoItem>): Store {
 }
 
 export function updateTodo(store: Store, id: string, patch: Partial<TodoItem>): Store {
+  const listIds = new Set(store.lists.map((l) => l.id))
   return {
     ...store,
-    todos: store.todos.map((t) => (t.id === id ? normalizeTodo({ ...t, ...patch, id: t.id }, new Set(store.lists.map((l) => l.id)), t.seq) : t))
+    todos: store.todos.map((t) => (t.id === id ? normalizeTodo({ ...t, ...patch, id: t.id }, listIds, t.seq) : t))
   }
 }
 
@@ -247,18 +248,19 @@ export function moveCard(store: Store, id: string, date: string, index: number):
   if (!target) return store
   const nextDate = isDate(date) ? date : ''
 
-  // 桶成员:同日期同优先级(不含被拖动项自身)
-  const bucketIds = store.todos
-    .filter((t) => t.id !== id && t.status === target.status && t.date === nextDate && t.prio === target.prio)
-    .sort((a, b) => (a.order !== b.order ? a.order - b.order : a.seq - b.seq))
-    .map((t) => t.id)
+  // 桶成员:同日期同优先级(不含被拖动项自身)。单次遍历收集,避免 filter+sort 各扫一遍。
+  const bucket: TodoItem[] = []
+  for (const t of store.todos) {
+    if (t.id !== id && t.status === target.status && t.date === nextDate && t.prio === target.prio) bucket.push(t)
+  }
+  bucket.sort((a, b) => (a.order !== b.order ? a.order - b.order : a.seq - b.seq))
 
-  const at = Math.max(0, Math.min(index, bucketIds.length))
-  bucketIds.splice(at, 0, id)
+  const at = Math.max(0, Math.min(index, bucket.length))
+  const ordered = bucket.map((t) => t.id)
+  ordered.splice(at, 0, id)
 
-  const orderById = new Set(bucketIds)
   const orderOf: Record<string, number> = {}
-  bucketIds.forEach((tid, i) => {
+  ordered.forEach((tid, i) => {
     orderOf[tid] = i + 1
   })
 
@@ -266,8 +268,8 @@ export function moveCard(store: Store, id: string, date: string, index: number):
     ...store,
     todos: store.todos.map((t) => {
       if (t.id === id) return { ...t, date: nextDate, order: orderOf[t.id] as number }
-      if (orderById.has(t.id)) return { ...t, order: orderOf[t.id] as number }
-      return t
+      const o = orderOf[t.id]
+      return o === undefined ? t : { ...t, order: o }
     })
   }
 }

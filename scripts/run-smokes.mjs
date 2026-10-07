@@ -25,7 +25,8 @@ const scripts = [
   'step13-search.js',
   'step14-keymap.js',
   'step15-window.js',
-  'step16-tray-notify.js'
+  'step16-tray-notify.js',
+  'step17-virtual.js'
 ]
 
 if (!existsSync(electron)) {
@@ -35,7 +36,8 @@ if (!existsSync(electron)) {
 
 // 单步脚本超时(毫秒):默认 60s;拖拽步骤涉及多次布局重建,给更宽裕的上限
 const STEP_TIMEOUTS = {
-  'step9-drag.js': '120000'
+  'step9-drag.js': '120000',
+  'step17-virtual.js': '120000'
 }
 
 // 主进程侧断言(mainChecks):渲染层脚本无法观测的窗口/托盘/通知状态

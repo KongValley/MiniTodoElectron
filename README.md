@@ -75,10 +75,49 @@
 npm install          # 需要 Node ≥ 18；Electron 二进制走 .npmrc 里的国内镜像
 npm run dev          # 开发模式
 npm run build        # typecheck + 构建到 out/
-npm test             # 共享层纯函数自检（node --test，19 项）
-npm run smoke        # 端到端冒烟（真 Electron 真窗口，16 项）
+npm test             # 共享层纯函数自检（node --test，23 项）
+npm run smoke        # 端到端冒烟（真 Electron 真窗口，17 项）
 npm run icon         # 生成 resources/icon.png
 ```
+
+性能基准（改动数据层/渲染层后跑一次，确认没有回归）：
+
+```bash
+npm run perf:data    # 生成 tmp/perf-pristine/{500,2000,5000}.json 三档数据
+npm run perf         # 三档 × 3 次取中位数，结果写 tmp/perf-current.json
+```
+
+`npm run perf` 每档都从 pristine 副本重置数据，保证三次跑在同一负载上。想看相对提升就把两次结果对比：
+
+```bash
+node scripts/perf-compare.mjs before 3
+# 改代码 → npm run build
+node scripts/perf-compare.mjs after 3
+```
+
+## 性能
+
+5000 条任务下（同一台机器，`npm run perf` 中位数）：
+
+| 交互 | 优化前 | 优化后 |
+| --- | --- | --- |
+| 切换视图 | 1860 ms | **21 ms** |
+| 切到列表并滚到底 | 2679 ms | **60 ms** |
+| 完成一条任务 | 806 ms | **69 ms** |
+| 拖拽改期 | 821 ms | **70 ms** |
+| 新建任务 | 663 ms | **49 ms** |
+| 搜索 | 458 ms | **72 ms** |
+| 主线程总阻塞 | 8371 ms | **52 ms** |
+| DOM 卡片数 | 3760 | **65** |
+
+关键设计（改这些地方时注意别退回去）：
+
+- `state.store` 用 `markRaw` 包住 —— 派生数据统一由 `store/index.ts` 的 `index` computed 提供，不依赖字段级追踪
+- 视图计数/看板列走 `shared/store-index.ts` 的**单次扫描索引**，不是逐视图扫描
+- 看板卡片与列表行都是**窗口化渲染**（`lib/virtual.ts`），只渲染可视区
+- 保存时 store 以**序列化字符串**过 IPC（传对象要结构化克隆 7.5 万个对象）
+- 落盘不做逐条 `normalizeStore`（只在导入文件这条不可信路径上做）
+
 
 打包（每架构一条，产物在 `release/<中文目录>/`）：
 
@@ -97,10 +136,11 @@ Win7 目录里的「前置补丁」来自仓库根的 `win7-patches/`（该目�
 ```
 src/shared/types.ts       数据模型与常量（状态/优先级/视图名）
 src/shared/dates.ts       日期工具（今天/加减/周几/标签/下次重复日期），本地时区
-src/shared/query.ts       视图过滤与排序 —— 看板/列表/侧栏计数的唯一入口
+src/shared/store-index.ts 单次扫描索引（视图计数 + 看板列 + 搜索命中）—— 性能关键路径
+src/shared/query.ts       排序、分桶与查表
 src/shared/store-ops.ts   数据变更纯函数（不可变）+ normalizeStore 唯一信任边界
 src/shared/api.ts         preload 契约与 IPC 通道名
-src/shared/store-ops.test.ts  纯函数自检（node --test）
+src/shared/store-ops.test.ts  纯函数与索引自检（node --test）
 
 src/main/index.ts         窗口（原生边框）/ 托盘常驻 / 协议 / 启动流程
 src/main/ipc.ts           IPC handler（统一 ok/error 兜底）+ 菜单导入导出
@@ -113,12 +153,20 @@ src/main/menu.ts          应用菜单
 src/main/smoke.ts         无头冒烟工具
 
 src/preload/index.ts      contextBridge 暴露 todoAPI
-src/renderer/src/store/   数据源 / 界面状态 / 设置与主题
+src/renderer/src/store/data.ts    数据源（markRaw，只整体替换）
+src/renderer/src/store/index.ts   响应式索引 computed（各组件统一读它）
+src/renderer/src/store/ui.ts      界面状态
+src/renderer/src/store/settings.ts 设置与主题
+src/renderer/src/lib/virtual.ts   窗口化渲染（固定行高 + 测量式可变高度）
+src/renderer/src/lib/keymap.ts    快捷键
+src/renderer/src/lib/selection.ts 列表多选状态
 src/renderer/src/components/  侧栏 / 顶栏 / 状态栏 / 看板 / 列表 / 各弹窗
-src/renderer/src/lib/     快捷键 / 多选状态
 src/renderer/src/test-api.ts  冒烟用 window.__todoTest
-scripts/run-smokes.mjs    冒烟运行器（16 步，含主进程侧断言）
+scripts/run-smokes.mjs    冒烟运行器（17 步，含主进程侧断言）
 scripts/smoke/step*.js    各步断言
+scripts/gen-perf-data.mjs 生成性能基准数据
+scripts/perf-probe.js     性能探针（长任务 + 墙钟）
+scripts/perf-compare.mjs  性能基准运行器（三档 × N 次取中位数）
 scripts/package-win.mjs   单架构打包 + 前置补丁分发
 ```
 
@@ -127,6 +175,8 @@ scripts/package-win.mjs   单架构打包 + 前置补丁分发
 - 单机本地存储，没有同步/多端；换机器要手动拷 `todos.json` 或「导出数据」
 - 不做分组/清单的增删改 UI（与旧版一致），清单结构来自数据文件或导入
 - 看板列宽固定 300 px；卡片标题最多两行
+- 列表行高固定 32 px（虚拟滚动据此窗口化，改成自适应行高需一并换测量式实现）
+- 看板卡片高度可变，虚拟滚动先按估算高度布局、挂载后按实测校正，极快滚动时可能有 1 帧的偏移跳动
 - 提醒时间用本机时区，不处理跨时区
 - 应用基于 Electron 22（Chromium 108）：这是为兼容 Win7 而选，现代机器上 Chromium 偏旧
 

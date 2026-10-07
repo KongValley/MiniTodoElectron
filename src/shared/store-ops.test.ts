@@ -6,7 +6,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addDays, isDate, label, nextByRepeat, today, week } from './dates'
-import { boardColumns, bucketsOf, count, match, sorted } from './query'
+import { bucketsOf, countDue, sortedByIndex } from './query'
+import { buildIndex } from './store-index'
 import {
   ACTIVE,
   DONE,
@@ -152,23 +153,25 @@ test('week7 是 [今天, 今天+6] 闭区间', () => {
       todo({ date: addDays(t, 7) })
     ]
   }
-  assert.equal(count(store, 'week7', ''), 2, '含第 6 天,不含第 7 天与前一天')
-  assert.equal(count(store, 'today', ''), 1)
-  assert.equal(count(store, 'inbox', ''), 0)
+  const idx = buildIndex(store, '')
+  assert.equal(idx.counts['week7'], 2, '含第 6 天,不含第 7 天与前一天')
+  assert.equal(idx.counts['today'], 1)
+  assert.equal(idx.counts['inbox'], 0)
 })
 
-test('match 的 list:/group: 前缀与搜索', () => {
+test('索引的 list:/group: 计数与搜索', () => {
   const store = normalizeStore(JSON.parse(LEGACY_JSON))
-  assert.equal(count(store, 'list:7eaee681d4', ''), 1)
-  assert.equal(count(store, 'group:6d8ae94af3', ''), 2, '工作组下两条')
-  assert.equal(count(store, 'inbox', ''), 1, '未排期且无清单')
-  assert.equal(count(store, 'all', '周报'), 1)
-  assert.equal(count(store, 'all', '周报X'), 0)
+  const idx = buildIndex(store, '')
+  assert.equal(idx.counts['list:7eaee681d4'], 1)
+  assert.equal(idx.counts['group:6d8ae94af3'], 2, '工作组下两条')
+  assert.equal(idx.counts['inbox'], 1, '未排期且无清单')
+  assert.equal(buildIndex(store, '周报').hits.length, 1)
+  assert.equal(buildIndex(store, '周报X').hits.length, 0)
 })
 
-test('sorted 全序:日期 → 优先级 → 清单名 → seq', () => {
+test('sortedByIndex 全序:日期 → 优先级 → 清单名 → seq', () => {
   const store = normalizeStore(JSON.parse(LEGACY_JSON))
-  const rows = sorted(store, 'all', '')
+  const rows = sortedByIndex(buildIndex(store, ''), 'all')
   assert.equal(rows.length, 3)
   assert.equal(rows[2]?.date, '', '未排期排最后')
   assert.equal(rows[0]?.prio, 1, '同日高优先级在前')
@@ -185,7 +188,7 @@ test('boardColumns 只收有日期的,列内按 prio 分桶', () => {
       todo({ date: addDays(t, 1), prio: 2, seq: 4 })
     ]
   }
-  const cols = boardColumns(store, 'all', '')
+  const cols = buildIndex(store, '').columns
   assert.equal(cols.length, 2, '未排期不成列')
   assert.deepEqual(cols.map((c) => c.date), [t, addDays(t, 1)])
   assert.deepEqual(bucketsOf(cols[0]?.items ?? []).map((b) => b.prio), [1, 3], '高→低,空桶不出现')
@@ -304,11 +307,86 @@ test('seedStore 结构与旧版一致', () => {
   assert.equal(s.lists.length, 5)
   assert.equal(s.todos.length, 12)
   assert.equal(s.todos.filter((t) => t.date === '').length, 1, '一条未排期')
-  assert.equal(count(s, 'inbox', ''), 1)
+  assert.equal(buildIndex(s, '').counts['inbox'], 1)
   assert.ok(s.lists.every((l) => s.groups.some((g) => g.id === l.gid)), '每个清单都挂在存在的分组上')
 })
 
-test('match 对 unknown view 不误伤', () => {
+test('索引对未知视图不产生多余键', () => {
   const store: Store = { ...emptyStore(), todos: [todo({ status: DONE })] }
-  assert.equal(match(store.todos[0] as TodoItem, 'bogus' as never, '', store), true)
+  const idx = buildIndex(store, '')
+  assert.equal(idx.counts['done'], 1)
+  assert.equal(idx.counts['bogus'], undefined)
+})
+
+test('buildIndex 计数与逐条统计一致,且覆盖全部 list:/group: 键', () => {
+  const store = normalizeStore(JSON.parse(LEGACY_JSON))
+  const idx = buildIndex(store, '')
+
+  // 逐条统计作为对照(独立实现,不复用 buildIndex)
+  const expectAll = store.todos.filter((t) => t.status === 0).length
+  assert.equal(idx.counts['all'], expectAll, 'all 计数')
+  for (const l of store.lists) {
+    const want = store.todos.filter((t) => t.status === 0 && t.lid === l.id).length
+    assert.equal(idx.counts[`list:${l.id}`], want, `list:${l.id} 计数`)
+  }
+  for (const g of store.groups) {
+    const lids = new Set(store.lists.filter((l) => l.gid === g.id).map((l) => l.id))
+    const want = store.todos.filter((t) => t.status === 0 && lids.has(t.lid)).length
+    assert.equal(idx.counts[`group:${g.id}`], want, `group:${g.id} 计数`)
+  }
+  // 每个清单/分组都有键(侧栏读不到 undefined)
+  for (const l of store.lists) {
+    assert.ok(`list:${l.id}` in idx.counts, `缺 list:${l.id}`)
+    assert.ok(`group:${l.gid}` in idx.counts, `缺 group:${l.gid}`)
+  }
+})
+
+test('buildIndex 的 hits 与搜索语义一致(全库,不限视图)', () => {
+  const store = normalizeStore(JSON.parse(LEGACY_JSON))
+  const idx = buildIndex(store, '周报')
+  const want = store.todos.filter((t) => (t.title + ' ' + t.note).toLowerCase().includes('周报')).length
+  assert.equal(idx.hits.length, want, 'hits 数 = 全库匹配数')
+  assert.equal(buildIndex(store, '').hits.length, store.todos.length, '空搜索命中全部')
+  // 大小写与首尾空格不敏感
+  assert.equal(buildIndex(store, '  周报  ').hits.length, want)
+})
+
+test('buildIndex 的 columns 只含有日期的命中项,按日期升序', () => {
+  const t = today()
+  const store: Store = {
+    ...emptyStore(),
+    todos: [
+      todo({ date: addDays(t, 2), prio: 1 }),
+      todo({ date: '', prio: 1 }),
+      todo({ date: t, prio: 1 }),
+      todo({ date: t, prio: 1, status: DONE })
+    ]
+  }
+  const cols = buildIndex(store, '').columns
+  assert.deepEqual(cols.map((c) => c.date), [t, addDays(t, 2)], '升序且不含未排期')
+  assert.equal(cols[0]?.items.length, 1, '已完成的不进看板')
+})
+
+test('sortedByIndex 与旧排序语义逐项一致(固定 fixture 断言 id 序列)', () => {
+  const store = normalizeStore(JSON.parse(LEGACY_JSON))
+  const idx = buildIndex(store, '')
+  const ids = sortedByIndex(idx, 'all').map((t) => t.id)
+  // LEGACY_JSON:seq1 高优(2026-10-07)、seq2 中优(2026-10-07)、seq3 中优(未排期)
+  assert.deepEqual(ids, ['8c1ed70edb', '3ece1da865', 'a1b2c3d4e5'], '日期 → 优先级 → seq')
+
+  // 同日期同优先级时按清单名(中文 locale)排,再按 seq
+  const t0 = today()
+  const same: Store = {
+    ...emptyStore(),
+    lists: [
+      { id: 'B', gid: '', name: '乙清单', color: '#000000', order: 0 },
+      { id: 'A', gid: '', name: '甲清单', color: '#000000', order: 1 }
+    ],
+    todos: [
+      todo({ id: 'x2', lid: 'B', date: t0, prio: 2, seq: 2 }),
+      todo({ id: 'x1', lid: 'A', date: t0, prio: 2, seq: 1 })
+    ]
+  }
+  const sameIds = sortedByIndex(buildIndex(same, ''), 'all').map((x) => x.id)
+  assert.deepEqual(sameIds, ['x1', 'x2'], '清单名排序优先于 seq')
 })

@@ -1,17 +1,45 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
-import { boardColumns } from '@shared/query'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { moveCard } from '@shared/store-ops'
 import { state, mutate } from '../store/data'
+import { index } from '../store/index'
 import { ui } from '../store/ui'
 import BoardColumn from './BoardColumn.vue'
 
-const columns = computed(() => boardColumns(state.store, ui.view, ui.search))
+const COL_W = 300
+
+const columns = computed(() => index.value.columns)
 /** 每列竖向滚动位置,按日期留存(重排/切视图后不丢) */
 const scrollByDate = reactive<Record<string, number>>({})
 const dragId = ref('')
 const dragPrio = ref(0)
 const horizontal = ref<HTMLElement | null>(null)
+const hScrollLeft = ref(0)
+const hViewportW = ref(1200)
+
+/** 只渲染与可视区相交的列(±1 列缓冲),列数很多时收益明显 */
+const visibleColumns = computed(() => {
+  const all = columns.value
+  if (all.length === 0) return { start: 0, items: [] as typeof all }
+  const start = Math.max(0, Math.floor(hScrollLeft.value / COL_W) - 1)
+  const end = Math.min(all.length, Math.ceil((hScrollLeft.value + hViewportW.value) / COL_W) + 1)
+  return { start, items: all.slice(start, end) }
+})
+
+const padLeft = computed(() => visibleColumns.value.start * COL_W)
+const padRight = computed(() => {
+  const { start, items } = visibleColumns.value
+  return Math.max(0, (columns.value.length - start - items.length) * COL_W)
+})
+
+onMounted(() => {
+  const host = horizontal.value
+  if (!host) return
+  hViewportW.value = host.clientWidth
+  new ResizeObserver(() => {
+    hViewportW.value = host.clientWidth
+  }).observe(host)
+})
 
 function onScroll(date: string, top: number): void {
   scrollByDate[date] = top
@@ -48,12 +76,18 @@ function onDragEnd(): void {
   dragPrio.value = 0
 }
 
-/** Ctrl+滚轮 横向滚动(普通滚轮保持各列原生竖向滚动) */
+/** 横向滚动:同步 scrollLeft 供列懒渲染;Ctrl+滚轮 时把竖向滚轮转成横向 */
+function onScrollH(): void {
+  const host = horizontal.value
+  if (host) hScrollLeft.value = host.scrollLeft
+}
+
 function onWheel(event: WheelEvent): void {
   const host = horizontal.value
   if (!host || !event.ctrlKey) return
   event.preventDefault()
   host.scrollLeft += event.deltaY
+  hScrollLeft.value = host.scrollLeft
 }
 </script>
 
@@ -64,9 +98,10 @@ function onWheel(event: WheelEvent): void {
       <button class="btn" data-testid="empty-new" @click="ui.dialog = { mode: 'new' }">新建任务</button>
     </div>
 
-    <div v-else ref="horizontal" class="columns" data-testid="board-columns">
+    <div v-else ref="horizontal" class="columns" data-testid="board-columns" @scroll="onScrollH">
+      <div :style="{ flex: `0 0 ${padLeft}px` }" />
       <BoardColumn
-        v-for="col in columns"
+        v-for="col in visibleColumns.items"
         :key="col.date"
         :column="col"
         :scroll-top="scrollByDate[col.date] ?? 0"
@@ -75,6 +110,7 @@ function onWheel(event: WheelEvent): void {
         @drop="onDrop"
         @add="onAdd"
       />
+      <div :style="{ flex: `0 0 ${padRight}px` }" />
     </div>
   </div>
 </template>

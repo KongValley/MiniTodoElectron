@@ -3,7 +3,8 @@
  * 全部走与 UI 相同的 store-ops 纯函数与 store,不另写一套逻辑。
  */
 import { isDate, label } from '@shared/dates'
-import { boardColumns, bucketsOf, count, countDue, sorted } from '@shared/query'
+import { bucketsOf, countDue, sortedByIndex } from '@shared/query'
+import { index } from './store/index'
 import {
   addSubtask,
   addTodo,
@@ -77,11 +78,11 @@ export function installTestApi(): void {
       ui.search = text
     },
     counts: () => ({
-      all: count(state.store, 'all', ui.search),
-      today: count(state.store, 'today', ui.search),
+      all: index.value.counts['all'] ?? 0,
+      today: index.value.counts['today'] ?? 0,
       due: countDue(state.store),
-      trash: count(state.store, 'trash', ui.search),
-      done: count(state.store, 'done', ui.search)
+      trash: index.value.counts['trash'] ?? 0,
+      done: index.value.counts['done'] ?? 0
     }),
     flush: () => flush(),
     reload,
@@ -122,15 +123,15 @@ export function installTestApi(): void {
     },
 
     boardColumns: () =>
-      boardColumns(state.store, ui.view, ui.search).map((c) => ({
+      index.value.columns.map((c) => ({
         date: c.date,
         prios: bucketsOf(c.items).map((b) => b.prio),
         ids: c.items.map((t) => t.id)
       })),
     listRows: () =>
-      sorted(state.store, ui.view, ui.search).map((t) => ({ id: t.id, title: t.title, date: t.date })),
+      sortedByIndex(index.value, ui.view).map((t) => ({ id: t.id, title: t.title, date: t.date })),
     buckets: (date) => {
-      const col = boardColumns(state.store, ui.view, ui.search).find((c) => c.date === date)
+      const col = index.value.columns.find((c) => c.date === date)
       if (!col) return []
       return bucketsOf(col.items).map((b) => ({ prio: b.prio, ids: b.items.map((t) => t.id) }))
     },

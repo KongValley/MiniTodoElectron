@@ -48,12 +48,15 @@ export async function loadStore(): Promise<LoadResult> {
   }
 }
 
+/**
+ * 原子落盘。调用方保证 store 合法(IPC 侧 assertStoreShape / 导入侧 normalizeStore),
+ * 这里不再重复逐条归一化 —— 5000 条时那一次归一化要 ~115ms,而它每次保存都会跑。
+ */
 export async function saveStore(store: Store): Promise<void> {
   const file = storePath()
-  const safe = normalizeStore(store)
   mkdirSync(dataDir(), { recursive: true })
   const tmp = `${file}.tmp`
-  writeFileSync(tmp, JSON.stringify(safe), 'utf8')
+  writeFileSync(tmp, JSON.stringify(store), 'utf8')
   renameSync(tmp, file)
 }
 
@@ -78,7 +81,7 @@ export async function backupIfDue(store: Store): Promise<string | null> {
   let created: string | null = null
   if (!alreadyToday) {
     created = join(dir, `todos-${stamp()}.json`)
-    writeFileSync(created, JSON.stringify(normalizeStore(store), null, 2), 'utf8')
+    writeFileSync(created, JSON.stringify(store, null, 2), 'utf8')
   }
 
   const all = listBackups()
@@ -94,7 +97,7 @@ export async function importFromFile(file: string): Promise<ImportResult> {
 }
 
 export async function exportToFile(file: string, store: Store): Promise<void> {
-  writeFileSync(file, JSON.stringify(normalizeStore(store), null, 2), 'utf8')
+  writeFileSync(file, JSON.stringify(store, null, 2), 'utf8')
 }
 
 /** 复制一份数据文件到目标路径(备份当前数据用) */

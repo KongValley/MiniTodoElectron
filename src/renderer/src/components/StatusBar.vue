@@ -2,14 +2,12 @@
 import { computed } from 'vue'
 import { countDue } from '@shared/query'
 import { state } from '../store/data'
+import { index } from '../store/index'
 import { ui } from '../store/ui'
 
 const todayCount = computed(() => countDue(state.store))
-const hitCount = computed(() => {
-  if (!ui.search) return null
-  const rows = state.store.todos.filter((t) => (t.title + ' ' + t.note).toLowerCase().includes(ui.search.toLowerCase()))
-  return rows.length
-})
+// 搜索命中数 = 命中搜索词的全部任务(不限视图),与索引的 hits 同义
+const hitCount = computed(() => (ui.search ? index.value.hits.length : null))
 </script>
 
 <template>

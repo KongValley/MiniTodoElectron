@@ -84,7 +84,11 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-width: 0;
+  /* 作为 .shell 的 grid item,min-height 默认 auto 会被内容撑高,
+     导致内部滚动容器(看板列/列表)拿不到可视高度,虚拟滚动无从计算窗口 */
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .body {

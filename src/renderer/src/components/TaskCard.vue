@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { label } from '@shared/dates'
-import { listById, listColor } from '@shared/query'
-import { INBOX_NAME, PRIO_COLOR, PRIO_NAME, type TodoItem } from '@shared/types'
+
 import { completeTodo } from '@shared/store-ops'
-import { mutate, state } from '../store/data'
+import { PRIO_COLOR, PRIO_NAME, type TodoItem } from '@shared/types'
+import { mutate } from '../store/data'
 import { ui } from '../store/ui'
 
-const props = defineProps<{ item: TodoItem }>()
+const props = defineProps<{
+  item: TodoItem
+  /** 清单名与色由父组件从索引取好传入,避免每条卡片各自扫 store */
+  listName: string
+  listColor: string
+  /** 日期标签:同列卡片日期相同,由父组件算一次传入(label() 含日期解析,逐卡重算很贵) */
+  dateLabel: string
+}>()
 
 const prioName = computed(() => PRIO_NAME[props.item.prio])
 const prioColor = computed(() => PRIO_COLOR[props.item.prio])
-const dateLabel = computed(() => label(props.item.date))
-const listName = computed(() => listById(state.store, props.item.lid)?.name ?? INBOX_NAME)
-const listDot = computed(() => listColor(state.store, props.item.lid))
 const subDone = computed(() => props.item.subtasks.filter((s) => s.done).length)
 const isDone = computed(() => props.item.status === 1)
 
@@ -46,7 +49,7 @@ function onOpen(): void {
       <div class="meta">
         <span class="date">{{ dateLabel }}</span>
         <span class="sep">·</span>
-        <span class="list"><i class="dot" :style="{ background: listDot }" />{{ listName }}</span>
+        <span class="list"><i class="dot" :style="{ background: listColor }" />{{ listName }}</span>
         <span v-if="item.subtasks.length > 0" class="subs" data-subs>{{ subDone }}/{{ item.subtasks.length }}</span>
         <span class="prio" :style="{ color: prioColor }">{{ prioName }}</span>
       </div>

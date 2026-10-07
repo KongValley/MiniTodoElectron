@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { INBOX_COLOR, INBOX_NAME, VIEWS, VIEW_NAME, type ViewKey } from '@shared/types'
-import { count } from '@shared/query'
+import { VIEWS, VIEW_NAME, type ViewKey } from '@shared/types'
 import { state } from '../store/data'
+import { index } from '../store/index'
 import { setView } from '../lib/keymap'
 import { ui } from '../store/ui'
 
@@ -20,12 +20,13 @@ const VIEW_ICON: Record<string, string> = {
 const primaryViews = VIEWS.slice(0, 5)
 const statusViews = VIEWS.slice(5)
 
-function rowCount(view: ViewKey): number {
-  return count(state.store, view, ui.search)
+/** 计数全部来自单次扫描的索引,不再逐行全量扫描 */
+function countOf(view: ViewKey): number {
+  return index.value.counts[view] ?? 0
 }
 
 function groupCount(gid: string): number {
-  return count(state.store, `group:${gid}` as ViewKey, ui.search)
+  return index.value.counts[`group:${gid}`] ?? 0
 }
 
 function isActive(view: ViewKey): boolean {
@@ -37,10 +38,11 @@ function toggleGroup(gid: string): void {
 }
 
 const listsByGroup = computed(() =>
-  state.store.groups.map((g) => ({
-    group: g,
-    lists: state.store.lists.filter((l) => l.gid === g.id).sort((a, b) => a.order - b.order)
-  }))
+  state.store.groups
+    .map((g) => ({
+      group: g,
+      lists: state.store.lists.filter((l) => l.gid === g.id).sort((a, b) => a.order - b.order)
+    }))
 )
 </script>
 
@@ -57,7 +59,7 @@ const listsByGroup = computed(() =>
       >
         <span class="icon">{{ VIEW_ICON[v] }}</span>
         <span class="name">{{ VIEW_NAME[v] }}</span>
-        <span class="num">{{ rowCount(v) }}</span>
+        <span class="num">{{ countOf(v) }}</span>
       </button>
 
       <div class="spacer" />
@@ -92,7 +94,7 @@ const listsByGroup = computed(() =>
         >
           <span class="dot" :style="{ background: l.color }" />
           <span class="name">{{ l.name }}</span>
-          <span class="num">{{ rowCount(`list:${l.id}` as ViewKey) }}</span>
+          <span class="num">{{ countOf(`list:${l.id}` as ViewKey) }}</span>
         </button>
       </template>
     </div>
@@ -108,7 +110,7 @@ const listsByGroup = computed(() =>
       >
         <span class="icon">{{ VIEW_ICON[v] }}</span>
         <span class="name">{{ VIEW_NAME[v] }}</span>
-        <span class="num">{{ rowCount(v) }}</span>
+        <span class="num">{{ countOf(v) }}</span>
       </button>
     </div>
   </aside>
