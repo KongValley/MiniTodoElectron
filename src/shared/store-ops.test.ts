@@ -11,6 +11,7 @@ import { buildIndex } from './store-index'
 import {
   ACTIVE,
   DONE,
+  DROPPED,
   TRASH,
   type Store,
   type TodoItem
@@ -389,4 +390,92 @@ test('sortedByIndex 与旧排序语义逐项一致(固定 fixture 断言 id 序�
   }
   const sameIds = sortedByIndex(buildIndex(same, ''), 'all').map((x) => x.id)
   assert.deepEqual(sameIds, ['x1', 'x2'], '清单名排序优先于 seq')
+})
+
+test('索引的 due 计数与 countDue 判据一致(多 fixture)', () => {
+  const t = today()
+  const cases: { name: string; store: Store }[] = [
+    { name: '空 store', store: emptyStore() },
+    {
+      name: '全未排期(不该计入)',
+      store: { ...emptyStore(), todos: [todo({ date: '' }), todo({ date: '' }), todo({ date: '' })] }
+    },
+    {
+      name: '全逾期',
+      store: { ...emptyStore(), todos: [todo({ date: addDays(t, -5) }), todo({ date: addDays(t, -1) })] }
+    },
+    {
+      name: '边界:今天 + 明天 + 昨天',
+      store: {
+        ...emptyStore(),
+        todos: [todo({ date: t }), todo({ date: addDays(t, 1) }), todo({ date: addDays(t, -1) })]
+      }
+    },
+    {
+      name: '已完成/已放弃/回收站不计入',
+      store: {
+        ...emptyStore(),
+        todos: [
+          todo({ date: t, status: DONE }),
+          todo({ date: t, status: DROPPED }),
+          todo({ date: t, status: TRASH }),
+          todo({ date: t, status: ACTIVE })
+        ]
+      }
+    },
+    {
+      name: '混合',
+      store: {
+        ...emptyStore(),
+        todos: [
+          todo({ date: t, status: ACTIVE }),
+          todo({ date: addDays(t, -3), status: ACTIVE }),
+          todo({ date: addDays(t, 4), status: ACTIVE }),
+          todo({ date: '', status: ACTIVE }),
+          todo({ date: addDays(t, -1), status: DONE })
+        ]
+      }
+    }
+  ]
+  for (const c of cases) {
+    assert.equal(
+      buildIndex(c.store, '').counts['due'],
+      countDue(c.store),
+      `due 计数应与 countDue 一致:${c.name}`
+    )
+  }
+})
+
+test('due 不受搜索词影响之外的视图语义(搜索会同时过滤两者)', () => {
+  const t = today()
+  const store: Store = {
+    ...emptyStore(),
+    todos: [todo({ title: '甲', date: t }), todo({ title: '乙', date: t })]
+  }
+  assert.equal(buildIndex(store, '').counts['due'], 2)
+  // 搜索词命中一条时,due 也只算命中的那条(与 countDue 不同:后者不看搜索词,故此处不比较)
+  assert.equal(buildIndex(store, '甲').counts['due'], 1)
+})
+
+test('label() 五种形态逐字节不变', () => {
+  const t = today()
+  assert.equal(label(''), '未排期')
+  assert.equal(label('2026-13-01'), '未排期')
+  assert.equal(label('2026-2-3'), '未排期')
+  assert.equal(label(t), '今天 ' + week(t))
+  assert.equal(label(addDays(t, 1)), '明天 ' + week(addDays(t, 1)))
+  assert.equal(label(addDays(t, 2)), '后天 ' + week(addDays(t, 2)))
+  // 更远的日期走 'M月d日 周X'
+  const far = addDays(t, 30)
+  const d = new Date(far + 'T00:00:00')
+  assert.equal(label(far), `${d.getMonth() + 1}月${d.getDate()}日 ${week(far)}`)
+})
+
+test('label() 连续多次调用结果稳定', () => {
+  const t = today()
+  const dates = ['', t, addDays(t, 1), addDays(t, 2), addDays(t, 5), '2026-13-01', addDays(t, -3)]
+  const first = dates.map((x) => label(x))
+  for (let i = 0; i < 50; i++) {
+    assert.deepEqual(dates.map((x) => label(x)), first, `第 ${i} 轮输出应与首轮一致`)
+  }
 })

@@ -3,7 +3,7 @@
  * 全部走与 UI 相同的 store-ops 纯函数与 store,不另写一套逻辑。
  */
 import { isDate, label } from '@shared/dates'
-import { bucketsOf, countDue, sortedByIndex } from '@shared/query'
+import { bucketsOf, sortedByIndex } from '@shared/query'
 import { index } from './store/index'
 import {
   addSubtask,
@@ -80,7 +80,7 @@ export function installTestApi(): void {
     counts: () => ({
       all: index.value.counts['all'] ?? 0,
       today: index.value.counts['today'] ?? 0,
-      due: countDue(state.store),
+      due: index.value.counts['due'] ?? 0,
       trash: index.value.counts['trash'] ?? 0,
       done: index.value.counts['done'] ?? 0
     }),

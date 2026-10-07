@@ -70,7 +70,7 @@ export async function runSmoke(win: BrowserWindow, mainChecks?: MainChecks): Pro
     console.log('[smoke] ' + text)
   }
 
-  /** 进程级度量:每个 Electron 进程的工作集内存 + CPU 峰值 */
+  /** 进程级度量:工作集 + 私有工作集(任务管理器「内存」列口径) + CPU 峰值 */
   const cpuPeak: Record<string, number> = {}
   const sampler = setInterval(() => {
     for (const m of app.getAppMetrics()) {
@@ -79,15 +79,28 @@ export async function runSmoke(win: BrowserWindow, mainChecks?: MainChecks): Pro
     }
   }, 100)
 
-  const collectMetrics = (): Record<string, unknown> => ({
-    processes: app.getAppMetrics().map((m) => ({
+  const round1 = (v: number): number => Math.round(v * 10) / 10
+
+  const collectMetrics = (): Record<string, unknown> => {
+    const procs = app.getAppMetrics().map((m) => ({
       type: m.type,
       pid: m.pid,
-      rssMB: Math.round(((m.memory?.workingSetSize ?? 0) / 1024) * 10) / 10,
-      cpuPeakPercent: Math.round((cpuPeak[m.type] ?? 0) * 10) / 10
-    })),
-    mainCpu: process.getCPUUsage()
-  })
+      rssMB: round1((m.memory?.workingSetSize ?? 0) / 1024),
+      // privateBytes = 私有提交(≈ Windows PrivateMemorySize64),不含共享 DLL 页。
+      // 注意:任务管理器「内存」列是"私有工作集",比这个小(实测 5000 条约 83 vs 136 MB),
+      // 且 getAppMetrics() 不提供该字段,要读它得用外部 Get-Counter。
+      privateMB: round1((m.memory?.privateBytes ?? 0) / 1024),
+      peakRssMB: round1((m.memory?.peakWorkingSetSize ?? 0) / 1024),
+      cpuPeakPercent: round1(cpuPeak[m.type] ?? 0)
+    }))
+    return {
+      processes: procs,
+      // 两种口径的合计:与「控制在 N MB 以内」这类目标对比时先说清口径
+      totalRssMB: round1(procs.reduce((s, p) => s + p.rssMB, 0)),
+      totalPrivateMB: round1(procs.reduce((s, p) => s + p.privateMB, 0)),
+      mainCpu: process.getCPUUsage()
+    }
+  }
 
   try {
     if (scriptPath) {

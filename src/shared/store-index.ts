@@ -42,6 +42,9 @@ export function buildIndex(store: Store, search: string): StoreIndex {
 
   const counts: Record<string, number> = Object.create(null)
   for (const v of ['all', 'today', 'tmr', 'week7', 'inbox', 'done', 'dropped', 'trash']) counts[v] = 0
+  // 今天到期或逾期的未完成任务数(与 query.ts 的 countDue 判据逐字一致);
+  // 顺手在这里算掉,StatusBar 就不必每次渲染再扫一遍全表
+  counts['due'] = 0
   for (const l of store.lists) {
     counts[`list:${l.id}`] = 0
     counts[`group:${l.gid}`] = 0
@@ -64,6 +67,8 @@ export function buildIndex(store: Store, search: string): StoreIndex {
       if (t.date === '') {
         counts['inbox'] = (counts['inbox'] as number) + 1
       } else {
+        // 有日期的未完成任务:今天或已逾期才计入 due
+        if (t.date <= t0) counts['due'] = (counts['due'] as number) + 1
         if (t.date === t0) counts['today'] = (counts['today'] as number) + 1
         if (t.date === t1) counts['tmr'] = (counts['tmr'] as number) + 1
         if (t.date.length === 10 && t.date >= t0 && t.date <= t6) counts['week7'] = (counts['week7'] as number) + 1

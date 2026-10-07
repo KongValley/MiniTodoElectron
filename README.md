@@ -118,6 +118,34 @@ node scripts/perf-compare.mjs after 3
 - 保存时 store 以**序列化字符串**过 IPC（传对象要结构化克隆 7.5 万个对象）
 - 落盘不做逐条 `normalizeStore`（只在导入文件这条不可信路径上做）
 
+## 内存
+
+**先确定口径**：同一时刻三种读法差 3 倍以上，混用会得出完全不同的结论。5000 条任务实测（本机 Win10，无 GPU 机器，应用已 `disableHardwareAcceleration()`）：
+
+| 口径 | 读法 | 空白 Electron（无业务代码） | 本应用 [5000 条] | < 200 MB |
+|---|---|---|---|---|
+| **任务管理器「内存」列**（私有工作集） | 外部 PowerShell，见下 | ~66 MB | **~83 MB** | ✓ |
+| 私有提交 | `getAppMetrics().privateBytes` 合计 | ~114 MB | 空闲 ~149 MB / 刚操作完 ~205 MB | 空闲 ✓ |
+| 工作集合计（含共享 Chromium DLL） | `getAppMetrics().workingSetSize` 合计 | ~251 MB | ~371 MB | ✗ |
+
+三个结论：
+
+1. **任务管理器口径下 83 MB，远低于 200 MB**；距空白 Electron 的 66 MB 下限只差 17 MB，这 17 MB 就是全部业务代码（5000 条数据 + 看板/列表/索引）。这一列不随操作波动。
+2. **工作集合计口径下 200 MB 不可达** —— 空白 Electron 窗口就已 251 MB（共享的 Chromium DLL 页被算进每个进程）。任何"把工作集压到 200"的尝试都是徒劳，别为此加启动开关。
+3. `privateBytes` 常被误当成任务管理器那列，实测它是「私有提交」，约为前者的 1.6 倍；它会随 V8 堆回收时机波动（空闲 ~149 MB，刚跑完一批操作 ~205 MB），因此只适合当**泄漏探测**阈值，不适合当内存预算。
+
+读任务管理器口径（应用运行时另开终端）：
+
+```bash
+powershell -NoProfile -Command "$c=Get-Counter '\Process(electron*)\Working Set - Private' -ErrorAction SilentlyContinue; [math]::Round((($c.CounterSamples|Measure-Object -Property CookedValue -Sum).Sum)/1MB,0)"
+```
+
+`npm run perf` 每档会打印私有提交与工作集合计；私有提交越过 320 MB 上限时脚本以非零码退出并提示疑似泄漏（正常波动不会触发）。
+
+内存没有"可优化的浪费"：应用自身只占 17 MB，且已排查过两处疑似点（`label()` 的逐行 `new Date()`、状态栏的 `countDue()` 全表扫描），实测前者加缓存反而慢 18%、后者只省 0.147 ms，都不值得改（见 `dates.ts` 里 `label()` 上方的注释）。
+
+无 GPU 机器上的进程构成：Browser / GPU / Utility(Network Service) / Tab 四个。GPU 进程在 `disableHardwareAcceleration()` 下依然存在 —— 它是 Chromium 的合成进程（走软件路径，`getGPUFeatureStatus()` 显示 `gpu_compositing: disabled_software`），不是显卡驱动进程，无法消除。`--in-process-gpu` 可把它并入主进程（进程数 4→3、工作集合计降约 30 MB），但私有提交几乎不变且 GPU 崩溃会带倒整个应用，因此默认不启用。
+
 
 打包（每架构一条，产物在 `release/<中文目录>/`）：
 

@@ -33,12 +33,32 @@ const med = (arr) => {
   return s.length === 0 ? 0 : s[Math.floor(s.length / 2)]
 }
 
+/**
+ * 私有提交上限(泄漏探测,不是内存预算)。
+ * 探针在跑完一轮改动后采样,此时 V8 堆尚未回收,5000 条实测约 200 MB;
+ * 稳态(空闲)约 136-149 MB。取 320 MB 作上限:只有真正的泄漏才会越过,
+ * GC 时机的正常波动不会误报。任务管理器「内存」列另需外部 PowerShell 读(约 83 MB)。
+ */
+const PRIVATE_COMMIT_CEILING_MB = 320
+
 const summary = { label, runs, sizes: {} }
+let leakSuspected = false
 
 for (const n of SIZES) {
   const dataDir = join(tmpDir, `perf-run-${n}`)
   const perStep = {}
-  const meta = { domCards: [], domRows: [], domCols: [], blockingMsTotal: [], longTasks: [] }
+  const meta = {
+    domCards: [],
+    domRows: [],
+    domCols: [],
+    blockingMsTotal: [],
+    longTasks: [],
+    // 内存:私有提交(privateBytes,≈PrivateMemorySize64)与工作集合计(含共享 DLL)。
+    // 任务管理器「内存」列(私有工作集)比私有提交小,且 getAppMetrics() 不提供,需外部读。
+    privateMB: [],
+    rssMB: [],
+    procCount: []
+  }
 
   for (let run = 1; run <= runs; run++) {
     // 每次运行都从 pristine 重置数据:探针会改写数据并落盘,
@@ -86,6 +106,10 @@ for (const n of SIZES) {
     meta.domCols.push(r.domCols)
     meta.blockingMsTotal.push(r.blockingMsTotal)
     meta.longTasks.push(r.longTasks)
+    const metrics = report.metrics ?? {}
+    if (typeof metrics.totalPrivateMB === 'number') meta.privateMB.push(metrics.totalPrivateMB)
+    if (typeof metrics.totalRssMB === 'number') meta.rssMB.push(metrics.totalRssMB)
+    if (Array.isArray(metrics.processes)) meta.procCount.push(metrics.processes.length)
     for (const s of r.steps) {
       perStep[s.label] ??= { wall: [], blocking: [] }
       perStep[s.label].wall.push(s.wallMs)
@@ -100,6 +124,10 @@ for (const n of SIZES) {
     domCols: med(meta.domCols),
     blockingMsTotal: med(meta.blockingMsTotal),
     longTasks: med(meta.longTasks),
+    // 私有提交与工作集合计;两者都含各进程,口径不同别混用(见 README 内存小节)
+    privateMB: med(meta.privateMB),
+    rssMB: med(meta.rssMB),
+    procCount: med(meta.procCount),
     steps: Object.fromEntries(
       Object.entries(perStep).map(([k, v]) => [k, { wallMs: med(v.wall), blockingMs: med(v.blocking) }])
     )
@@ -115,8 +143,19 @@ for (const n of SIZES) {
   const s = summary.sizes[n]
   console.log(`\n--- ${n} 条 ---`)
   console.log(`DOM 卡片 ${s.domCards} | DOM 列表行 ${s.domRows} | DOM 列 ${s.domCols} | 总阻塞 ${s.blockingMsTotal} ms | 长任务 ${s.longTasks}`)
+  console.log(
+    `内存 私有提交 ${s.privateMB} MB | 工作集合计 ${s.rssMB} MB | ${s.procCount} 进程`
+  )
+  if (s.privateMB > PRIVATE_COMMIT_CEILING_MB) {
+    console.log(`  ⚠ 私有提交超过 ${PRIVATE_COMMIT_CEILING_MB} MB 上限,疑似内存泄漏`)
+    leakSuspected = true
+  }
   for (const [name, v] of Object.entries(s.steps)) {
     console.log(`  ${name.padEnd(26)} 墙钟 ${String(v.wallMs).padStart(5)} ms  阻塞 ${String(v.blockingMs).padStart(5)} ms`)
   }
 }
 console.log(`\n结果已写入 tmp/perf-${label}.json`)
+if (leakSuspected) {
+  console.error('内存探测未通过:私有提交越过上限,请检查是否有泄漏')
+  process.exit(1)
+}
