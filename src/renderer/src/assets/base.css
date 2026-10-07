@@ -1,0 +1,135 @@
+/* 调色板:键名对齐旧版 Theme.cs 的 19 个语义色。组件样式一律用 var(--*),禁止硬编码十六进制。 */
+:root {
+  --bg: #fafafb;
+  --panel: #f4f5f7;
+  --card: #ffffff;
+  --hover: #f1f2f5;
+  --sel: #eceef2;
+  --line: #e4e7ea;
+  --text: #1a1d24;
+  --text-dim: #767c85;
+  --text-mute: #b0b6be;
+  --accent: #3a7afe;
+  --accent-soft: #e8efff;
+  --field: #ffffff;
+  --field-line: #d8dce0;
+  --status: #f4f5f7;
+  --shadow: #e0e4e9;
+  --card-hi: #f7f9fb;
+  --rail-active: #e8ecf2;
+  --track: #f0f1f3;
+  --thumb: #c4c9cf;
+  --thumb-hot: #9aa1a9;
+  --prio-1: #d34a3e;
+  --prio-2: #dd9e28;
+  --prio-3: #3c9954;
+  --danger: #d34a3e;
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: #16181d;
+  --panel: #1b1e24;
+  --card: #22262e;
+  --hover: #2a2f38;
+  --sel: #31363f;
+  --line: #33383f;
+  --text: #e6e8ec;
+  --text-dim: #9ba2ac;
+  --text-mute: #6b727c;
+  --accent: #5b93ff;
+  --accent-soft: #22304a;
+  --field: #1b1e24;
+  --field-line: #3a4048;
+  --status: #1b1e24;
+  --shadow: #0e1013;
+  --card-hi: #262b33;
+  --rail-active: #2e343d;
+  --track: #2a2f38;
+  --thumb: #4a515b;
+  --thumb-hot: #69717c;
+  --prio-1: #e4695c;
+  --prio-2: #e8b457;
+  --prio-3: #5cb377;
+  --danger: #e4695c;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--field-line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+  user-select: text;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+input[type='checkbox'] {
+  padding: 0;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--thumb);
+  border-radius: 5px;
+  border: 2px solid var(--track);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--thumb-hot);
+}
+
+/* 通用:细滚动条(内容装得下时视觉上不占位) */
+.thin-scroll {
+  scrollbar-width: thin;
+}
