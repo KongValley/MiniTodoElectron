@@ -10,9 +10,9 @@
 
 | 分类 | 内容 |
 | --- | --- |
-| 视图 | 分组 → 清单两级侧栏；看板（按日期分列，列内按优先级分组）与列表两种视图，`B` 切换 |
+| 视图 | 分组 → 清单两级侧栏；看板（**列随视图过滤**，按日期分列，列内按优先级分组）与列表两种视图，`B` 切换 |
 | 任务 | 标题、备注、日期（可「不排期」）、清单、优先级（高/中/低）、状态（待办/已完成/已放弃/回收站） |
-| 增强 | **看板拖拽**改期与同优先级桶内排序、**深色/浅色主题**、**托盘常驻 + 到期通知**、**子任务清单**、**重复任务**、**右键菜单**（改期/改优先级/完成/删除）、**列表列排序**、**搜索词高亮**、**自动备份 + 导入导出**（导入可选替换/合并） |
+| 增强 | **看板拖拽**改期与同优先级桶内排序、**深色/浅色主题**、**托盘常驻 + 到期通知**、**子任务清单**、**重复任务**、**右键菜单**（改期/改优先级/完成/删除）、**列表列排序**、**搜索词高亮**、**自动备份 + 导入导出**（导入可选替换/合并）、**自绘彩色 SVG 图标**（双主题自适应，零图标库依赖） |
 | 数据 | `%APPDATA%\MiniTodoElectron\todos.json`，UTF-8 明文，可直接备份/编辑；每天自动备份到 `backups/`（保留最新 10 份） |
 | 迁移 | 「文件 → 导入旧版数据…」默认指向 `%APPDATA%\MiniTodo\todos.json`，一次性导入旧版数据（导入前自动备份） |
 
@@ -36,7 +36,7 @@
 
 ## 界面
 
-左侧是视图与清单（分组 → 清单两层，每行右侧显示条数）；顶栏是视图名、搜索、新建、视图切换、设置、快捷键；底部状态栏显示数据文件路径、今日待办数与快捷键提示。
+左侧是视图与清单（分组 → 清单两层，每行右侧显示条数，视图行配彩色图标）；顶栏是视图名、搜索、新建、视图切换、设置、快捷键（四个动作按钮各带图标）；底部状态栏显示数据文件路径、今日待办数与快捷键提示。
 
 窗口用系统原生标题栏。**关闭窗口 = 隐藏到托盘**（托盘常驻），真正退出走「文件 → 退出」或右键托盘图标 →「退出」。
 
@@ -77,7 +77,7 @@
 npm install          # 需要 Node ≥ 18；Electron 二进制走 .npmrc 里的国内镜像
 npm run dev          # 开发模式
 npm run build        # typecheck + 构建到 out/
-npm test             # 共享层纯函数自检（node --test，30 项）
+npm test             # 共享层纯函数自检（node --test，31 项）
 npm run smoke        # 端到端冒烟（真 Electron 真窗口，26 项，含主进程侧断言）
 npm run icon         # 生成 resources/icon.png
 ```
@@ -115,10 +115,24 @@ node scripts/perf-compare.mjs after 3
 关键设计（改这些地方时注意别退回去）：
 
 - `state.store` 用 `markRaw` 包住 —— 派生数据统一由 `store/index.ts` 的 `index` computed 提供，不依赖字段级追踪
-- 视图计数/看板列走 `shared/store-index.ts` 的**单次扫描索引**，不是逐视图扫描
+- 视图计数/看板列走 `shared/store-index.ts` 的**单次扫描索引**，不是逐视图扫描。**但看板列要走 `query.ts` 的 `columnsForView()`** —— `index.columns` 是全量扫描的结果，直接喂看板会在「今天」视图下仍列出未来日期的列
 - 看板卡片与列表行都是**窗口化渲染**（`lib/virtual.ts`），只渲染可视区
 - 保存时 store 以**序列化字符串**过 IPC（传对象要结构化克隆 7.5 万个对象）
 - 落盘不做逐条 `normalizeStore`（只在导入文件这条不可信路径上做）
+
+## 图标
+
+全部手绘内联 SVG，**不引图标库**。`Icon.vue` 里两张表：
+
+| 表 | 形态 | 配色 | 用在哪 |
+| --- | --- | --- | --- |
+| `PART` | 多部件实心（主体 + 阴影 + 镂空） | 每件自带 `var(--ico-*)` | 侧栏 8 个视图、顶栏按钮、右键菜单 |
+| `STROKE` / `FILL` | 单色描边 / 实心 | `currentColor`，跟随所在行文字色 | 卡片内的搜索、勾、加号、优先级旗标 |
+
+- 配色 9 组 token，浅色/深色各一套；镂空细节用 `var(--card)`，深色下自动翻成内凹
+- 组件里禁止硬编码色值，一律走 `var(--*)`
+- 改 `PART` 时注意：**笔画形（勾/叉/箭头）必须给 `s`（描边宽度）走描边渲染**。这类路径直接 `fill` 是零面积的，画出来什么都没有
+- `STROKE` 每项必须是**一条完整**的 `d`（数组元素）。别把多条子路径拼成一个字符串再按空格拆 —— 路径里的空格是参数分隔符，拆出来的是语法非法的碎片，`<svg>` 元素在但一个像素都不画
 
 ## 内存
 
@@ -161,13 +175,34 @@ npm run dist             # 四个架构依次全打
 
 Win7 目录里的「前置补丁」来自仓库根的 `win7-patches/`（该目录体积大、已 gitignore，首次打 Win7 包前需自行放入 4 个 `.msu`；缺目录时打包只提示不失败）。
 
+## 发布（GitHub Actions 云端打包）
+
+不想在本机跑 `npm run dist`、也不想手动往 Release 拖 8 个 exe，就用云端流水线：`.github/workflows/release.yml` 在 GitHub 的 windows runner 上跑**同一套** `package-win.mjs`，四个架构并行，产物直接传成 Release 资产。本地打包的路径仍然保留，两条路互不依赖。
+
+**一次性准备** —— 把 Win7 前置补丁传成一个常驻 Release。`win7-patches/` 有 121 MB 且已 gitignore，仓库里没有，CI 不打这个种子就会缺补丁：
+
+```bash
+gh release create win7-patches --title "Win7 前置补丁源" --notes "CI 构建时按架构取用,勿删" win7-patches/*.msu
+```
+
+**每次发布**，二选一：
+
+| 方式 | 操作 |
+| --- | --- |
+| 网页触发 | Actions → release → Run workflow，填版本号（留空取 `package.json`）；`publish=false` 可只验证构建不发布 |
+| 打 tag | `npm version 1.1.0 && git push origin v1.1.0`（tag 与 `package.json` 版本不一致会直接拒绝发布） |
+
+流水线做的事：`npm ci` → 按架构下载对应 `.msu` → `npm run build` → `node scripts/package-win.mjs <架构>` → 汇总成 Release 资产（8 个 exe + 4 个 `.msu` + 一份《安装说明.txt》）。tag 已存在时会先删旧 Release 再重建，方便重跑。
+
+找不到 `win7-patches` 这个 Release 时，流水线只发一条 warning 不失败 —— 代价是那两个 Win7 包不含「前置补丁」目录，属于裸包。内网分发务必先把种子打好。
+
 ## 代码结构
 
 ```
 src/shared/types.ts       数据模型与常量（状态/优先级/视图名）
 src/shared/dates.ts       日期工具（今天/加减/周几/标签/下次重复日期），本地时区
-src/shared/store-index.ts 单次扫描索引（视图计数 + 看板列 + 搜索命中）—— 性能关键路径
-src/shared/query.ts       排序、分桶与查表
+src/shared/store-index.ts 单次扫描索引（视图计数 + 全量看板列 + 搜索命中）—— 性能关键路径
+src/shared/query.ts       排序、分桶、查表与 columnsForView（看板列按视图过滤后的分桶）
 src/shared/store-ops.ts   数据变更纯函数（不可变）+ normalizeStore 唯一信任边界
 src/shared/api.ts         preload 契约与 IPC 通道名
 src/shared/store-ops.test.ts  纯函数与索引自检（node --test）
@@ -200,6 +235,7 @@ scripts/gen-perf-data.mjs 生成性能基准数据
 scripts/perf-probe.js     性能探针（长任务 + 墙钟）
 scripts/perf-compare.mjs  性能基准运行器（三档 × N 次取中位数）
 scripts/package-win.mjs   单架构打包 + 前置补丁分发
+.github/workflows/release.yml  云端四架构打包 + 发 Release（见 §发布）
 ```
 
 ## 已知限制

@@ -1,0 +1,147 @@
+# 云端打包并发布 Release:在 GitHub Actions 的 windows runner 上跑本地的同一套
+# npm run dist(改的是运行位置,不是构建逻辑 —— 本地打完的结果与这里一致)。
+#
+# 触发方式(二选一):
+#   1. Actions 页面手动 Run workflow,填版本号(留空则用 package.json 里的)
+#   2. 本地 npm version 1.1.0 && git push origin v1.1.0
+#
+# 前置条件(只需做一次):把 Win7 前置补丁传成一个常驻 Release,CI 从那里取。
+# win7-patches/ 有 121MB 且已 gitignore,仓库里没有,不打种子的话 Win7 包会缺补丁:
+#   gh release create win7-patches --title "Win7 前置补丁源" --notes "CI 构建时按架构取用,勿删" win7-patches/*.msu
+# 没找到该 Release 时 CI 只告警不失败,产出的 Win7 包就是不含「前置补丁」目录的裸包。
+
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号(留空则用 package.json 里的)。例:1.1.0'
+        required: false
+        type: string
+      publish:
+        description: '是否创建 GitHub Release(false = 只构建,用于验证流水线)'
+        required: false
+        default: true
+        type: boolean
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+# 各架构并行;bash 让 Windows runner 与 ubuntu 的 release job 用同一套脚本写法
+defaults:
+  run:
+    shell: bash
+
+env:
+  # 常驻补丁 Release 的 tag,改了要同步改 README §发布
+  PATCHES_TAG: win7-patches
+
+jobs:
+  build:
+    name: 打包 ${{ matrix.combo }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        combo: [win7-ia32, win7-x64, win10-ia32, win10-x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Electron 二进制与 electron-builder 的 nsis/winCodeSign 走 .npmrc 里的国内镜像
+      - name: 安装依赖(含 Electron 二进制)
+        run: npm ci
+
+      - name: 对齐版本号
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          [ -n "$VERSION" ] || VERSION="$(node -p "require('./package.json').version")"
+          echo "构建版本:$VERSION"
+          # 产物文件名内嵌这个版本号,所以要同步写进 package.json
+          npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
+
+      - name: 取 Win7 前置补丁
+        if: startsWith(matrix.combo, 'win7-')
+        run: |
+          set -uo pipefail
+          ARCH_TOKEN=x86; case "${{ matrix.combo }}" in *-x64) ARCH_TOKEN=x64;; esac
+          mkdir -p win7-patches
+          if gh release download "$PATCHES_TAG" --pattern "*${ARCH_TOKEN}*.msu" --dir win7-patches --clobber; then
+            echo "已取补丁:$(ls win7-patches | wc -l) 个"
+          else
+            echo "::warning::未找到 $PATCHES_TAG Release(gh release create $PATCHES_TAG --title 'Win7 前置补丁源' --notes 'CI 构建时按架构取用,勿删' win7-patches/*.msu),本架构包将不含「前置补丁」目录"
+          fi
+
+      - name: 构建
+        run: npm run build
+
+      - name: 打包
+        run: node scripts/package-win.mjs ${{ matrix.combo }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.combo }}
+          path: release/*/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: 发布 GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: release
+
+      # 摊平成单个资产目录:exe 与 msu 的文件名已按架构唯一,不会互相覆盖;
+      # 两个 Win7 架构各有同名「安装说明.txt」,只取一份
+      - name: 汇总产物
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find release -name '*.exe'  -exec cp {} dist/ \;
+          find release -name '*.msu'  -exec cp {} dist/ \;
+          find release -name '安装说明.txt' | sort | head -1 | xargs -r -I{} cp {} dist/
+          echo "--- 资产清单 ---"
+          ls -lh dist
+
+      - name: 创建 Release
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+          if [ "${{ github.event_name }}" = "push" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 package.json 版本 $VERSION 不一致,拒绝发布"
+            exit 1
+          fi
+          # 同名 tag 已存在说明重跑过:删掉旧 Release 重建,否则资产名冲突会失败
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "删除已存在的 $TAG 以便重跑"
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" dist/* \
+            --title "迷你待办 ${VERSION}" \
+            --notes "四架构安装版 + 便携版。Win7 需先按「安装说明.txt」顺序补装「前置补丁」里的 4 个 .msu(先 KB4490628 再 KB4474419)。" \
+            --latest
+          echo "已发布:$TAG"
+
+      - name: 汇总产物(未发布)
+        if: ${{ github.event_name != 'push' && !inputs.publish }}
+        run: echo "publish=false,只构建不发布。产物见 dist/"
