@@ -8,7 +8,8 @@
 # 前置条件(只需做一次):把 Win7 前置补丁传成一个常驻 Release,CI 从那里取。
 # win7-patches/ 有 121MB 且已 gitignore,仓库里没有,不打种子的话 Win7 包会缺补丁:
 #   gh release create win7-patches --title "Win7 前置补丁源" --notes "CI 构建时按架构取用,勿删" win7-patches/*.msu
-# 没找到该 Release 时 CI 只告警不失败,产出的 Win7 包就是不含「前置补丁」目录的裸包。
+# 没找到该 Release、或取到的 .msu 不是 4 个,CI 都会**硬失败**而不是继续 ——
+# 静默产出一个缺补丁的 Win7 裸包危险得多:它在 Win7 机器上根本起不来。
 
 name: release
 
