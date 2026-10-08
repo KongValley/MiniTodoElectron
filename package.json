@@ -1,6 +1,6 @@
 {
   "name": "mini-todo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "迷你待办 —— 基于 Electron 的看板式待办管理工具",
   "license": "GPL-3.0-or-later",
   "private": true,
