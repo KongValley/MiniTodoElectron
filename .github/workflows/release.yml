@@ -142,20 +142,29 @@ jobs:
       # 摊平成单个资产目录。只收 mini-todo-*.exe(package-win.mjs 的命名约定),
       # 不要用 '*.exe' —— electron-builder 会在打包目录里留下 elevate.exe 这类
       # 助手程序,一并发布会让用户困惑。
-      # .msu 只存在于「前置补丁」子目录;两个 Win7 架构各有同名「安装说明.txt」,只取一份。
+      # .msu 只存在于「前置补丁」子目录;两个 Win7 架构各有同名《安装说明.txt》,只取一份。
+      #
+      # 资产名必须是 ASCII:实测 gh release create 会把非 ASCII 文件名压成
+      # "default.txt"(内容完好,名字没了)。本地分发目录里仍用中文名,只在这里
+      # 改成 ASCII —— 内容不变,用户下载后打开还是中文。
       - name: 汇总产物
         run: |
           set -euo pipefail
           mkdir -p dist
           find release -name 'mini-todo-*.exe' -exec cp {} dist/ \;
           find release -name '*.msu'            -exec cp {} dist/ \;
-          find release -name '安装说明.txt' | sort | head -1 | xargs -r -I{} cp {} dist/
+          find release -name '安装说明.txt' | sort | head -1 | xargs -r -I{} cp {} dist/win7-patches-readme.txt
           echo "--- 资产清单 ---"
           ls -lh dist
           # 8 个 exe(4 架构 x 安装版/便携版)+ 8 个 msu(两个 Win7 架构各 4 个)
-          # + 1 份《安装说明.txt》(两个 Win7 架构同名,只取一份)= 17
+          # + 1 份说明(两个 Win7 架构同名,只取一份)= 17
           N=$(ls dist | wc -l)
           [ "$N" -eq 17 ] || { echo "::error::预期 17 个资产(8 exe + 8 msu + 1 说明),实际 $N"; exit 1; }
+          if ls dist | grep -qP '[^\x20-\x7e]'; then
+            echo "::error::存在非 ASCII 资产名,上传后会被 gh 压成 default.txt"
+            ls dist
+            exit 1
+          fi
 
       - name: 创建 Release
         if: ${{ github.event_name == 'push' || inputs.publish }}
