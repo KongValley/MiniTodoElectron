@@ -147,8 +147,10 @@ jobs:
           find release -name '安装说明.txt' | sort | head -1 | xargs -r -I{} cp {} dist/
           echo "--- 资产清单 ---"
           ls -lh dist
+          # 8 个 exe(4 架构 x 安装版/便携版)+ 8 个 msu(两个 Win7 架构各 4 个)
+          # + 1 份《安装说明.txt》(两个 Win7 架构同名,只取一份)= 17
           N=$(ls dist | wc -l)
-          [ "$N" -eq 13 ] || { echo "::error::预期 13 个资产(8 exe + 4 msu + 1 说明),实际 $N"; exit 1; }
+          [ "$N" -eq 17 ] || { echo "::error::预期 17 个资产(8 exe + 8 msu + 1 说明),实际 $N"; exit 1; }
 
       - name: 创建 Release
         if: ${{ github.event_name == 'push' || inputs.publish }}

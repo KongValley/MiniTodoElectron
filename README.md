@@ -192,7 +192,9 @@ gh release create win7-patches --title "Win7 前置补丁源" --notes "CI 构建
 | 网页触发 | Actions → release → Run workflow，填版本号（留空取 `package.json`）；`publish=false` 可只验证构建不发布 |
 | 打 tag | `npm version 1.1.0 && git push origin v1.1.0`（tag 与 `package.json` 版本不一致会直接拒绝发布） |
 
-流水线做的事：`npm ci` → 按架构下载对应 `.msu` → `npm run build` → `node scripts/package-win.mjs <架构>` → 汇总成 Release 资产（8 个 exe + 4 个 `.msu` + 一份《安装说明.txt》）。tag 已存在时会先删旧 Release 再重建，方便重跑。
+流水线做的事：`npm ci` → 按架构下载对应 `.msu` → `npm run build` → `node scripts/package-win.mjs <架构>` → 汇总成 Release 资产：**8 个 exe**（4 架构 × 安装版/便携版）+ **8 个 `.msu`**（两个 Win7 架构各 4 个）+ **1 份《安装说明.txt》**（两个 Win7 架构同名，只取一份），共 17 个。tag 已存在时会先删旧 Release 再重建，方便重跑。
+
+汇总只收 `mini-todo-*.exe` 与 `前置补丁/` 下的 `.msu`，electron-builder 留在 `release/` 里的暂存目录（`win-unpacked/`）和助手程序（`elevate.exe`）不会混进资产；资产数不等于 17 时流水线失败。
 
 补丁取不到时流水线**直接失败**，不会产出一个缺补丁的 Win7 裸包 —— 那种包在 Win7 机器上根本起不来，静默发布比构建失败危险得多。同理，某个架构取到的 `.msu` 不等于 4 个也会失败。
 
