@@ -191,7 +191,7 @@ src/renderer/src/lib/virtual.ts   窗口化渲染（固定行高 + 测量式可�
 src/renderer/src/lib/keymap.ts    快捷键
 src/renderer/src/lib/selection.ts 列表多选状态 + Ctrl+A 行源
 src/renderer/src/lib/search.ts    搜索词命中片段（标题高亮用）
-src/renderer/src/components/Icon.vue      全站 SVG 图标(线性描边,颜色走 currentColor)
+src/renderer/src/components/Icon.vue      全站 SVG 图标（PART 表=多部件实心彩色，配色走 --ico-* token；STROKE/FILL 表=单色描边，跟随 currentColor）
 src/renderer/src/components/  侧栏 / 顶栏 / 状态栏 / 看板 / 列表 / 右键菜单 / 各弹窗
 src/renderer/src/test-api.ts  冒烟用 window.__todoTest
 scripts/run-smokes.mjs    冒烟运行器（26 步，含主进程侧断言）

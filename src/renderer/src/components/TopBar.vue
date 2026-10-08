@@ -45,12 +45,19 @@ function onNew(): void {
     </div>
 
     <div class="actions">
-      <button class="btn" data-testid="new-task" @click="onNew">新建</button>
-      <button class="btn" data-testid="toggle-board" :title="ui.board ? '切换到列表 (B)' : '切换到看板 (B)'" @click="toggleBoard">
-        {{ ui.board ? '列表' : '看板' }}
+      <button class="btn" data-testid="new-task" @click="onNew"><Icon name="newTask" :size="14" />新建</button>
+      <button
+        class="btn"
+        data-testid="toggle-board"
+        :title="ui.board ? '切换到列表 (B)' : '切换到看板 (B)'"
+        @click="toggleBoard"
+      >
+        <Icon :name="ui.board ? 'listView' : 'boardView'" :size="14" />{{ ui.board ? '列表' : '看板' }}
       </button>
-      <button class="btn" data-testid="open-settings" @click="ui.settingsOpen = true">设置</button>
-      <button class="btn" data-testid="open-help" @click="ui.helpOpen = true">快捷键</button>
+      <button class="btn" data-testid="open-settings" @click="ui.settingsOpen = true">
+        <Icon name="settings" :size="14" />设置
+      </button>
+      <button class="btn" data-testid="open-help" @click="ui.helpOpen = true"><Icon name="help" :size="14" />快捷键</button>
     </div>
   </header>
 </template>
@@ -105,6 +112,9 @@ function onNew(): void {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 5px 12px;
   border-radius: 6px;
   border: 1px solid var(--field-line);

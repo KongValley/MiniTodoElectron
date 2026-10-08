@@ -24,11 +24,21 @@
   --prio-2: #dd9e28;
   --prio-3: #3c9954;
   --danger: #d34a3e;
-  /* 视图语义色(侧栏图标专用) */
-  --v-today: #e08c1f;
-  --v-week: #2563eb;
-  --v-inbox: #0f8f80;
-  --v-all: #4a5568;
+  /* 图标双色:ico-* 为主色,ico-*-2 为阴影/次级色。SVG 图标不描边,靠这两层出体积感 */
+  --ico-blue: #2f6fe4;
+  --ico-blue-2: #1c4bb0;
+  --ico-cyan: #0f8f80;
+  --ico-cyan-2: #0a6f63;
+  --ico-amber: #e08c1f;
+  --ico-amber-2: #b96f14;
+  --ico-green: #3c9954;
+  --ico-green-2: #2c7a41;
+  --ico-red: #d34a3e;
+  --ico-red-2: #ad362c;
+  --ico-gray: #5d6673;
+  --ico-gray-2: #464e59;
+  --ico-violet: #6b53c4;
+  --ico-violet-2: #54409f;
   color-scheme: light;
 }
 
@@ -57,11 +67,21 @@
   --prio-2: #ecc06a;
   --prio-3: #5cbc7f;
   --danger: #e8705f;
-  /* 视图语义色:深色下提亮保证对比度 */
-  --v-today: #f0b45a;
-  --v-week: #6d9df5;
-  --v-inbox: #3fbfae;
-  --v-all: #a3b0c0;
+  /* 图标双色:深色下整体提亮,次级色也要跟上,否则阴影层会糊成一片 */
+  --ico-blue: #6d9df5;
+  --ico-blue-2: #4f7fd8;
+  --ico-cyan: #3fbfae;
+  --ico-cyan-2: #2c9b8c;
+  --ico-amber: #f0b45a;
+  --ico-amber-2: #c98f3d;
+  --ico-green: #5cbc7f;
+  --ico-green-2: #42955e;
+  --ico-red: #e8705f;
+  --ico-red-2: #c45546;
+  --ico-gray: #98a2af;
+  --ico-gray-2: #737e8b;
+  --ico-violet: #a48fe8;
+  --ico-violet-2: #8570cd;
   color-scheme: dark;
 }
 

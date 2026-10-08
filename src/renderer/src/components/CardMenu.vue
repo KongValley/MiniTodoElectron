@@ -64,10 +64,10 @@ const actions = computed<Action[]>(() => {
   if (!item.value) return []
   const done = item.value.status === 1
   return [
-    { label: '编辑', icon: 'all', run: edit },
+    { label: '编辑', icon: 'edit', run: edit },
     { label: '改期到今天', icon: 'today', run: () => reschedule(today(), '今天') },
-    { label: '改期到明天', icon: 'week', run: () => reschedule(addDays(today(), 1), '明天') },
-    { label: '改期到后天', icon: 'week', run: () => reschedule(addDays(today(), 2), '后天') },
+    { label: '改期到明天', icon: 'tmr', run: () => reschedule(addDays(today(), 1), '明天') },
+    { label: '改期到后天', icon: 'calendar', run: () => reschedule(addDays(today(), 2), '后天') },
     { label: '不排期', icon: 'inbox', run: () => reschedule('', '未排期') },
     { label: done ? '取消完成' : '完成', icon: 'check', run: complete },
     { label: '删除', icon: 'trash', danger: true, run: remove }
