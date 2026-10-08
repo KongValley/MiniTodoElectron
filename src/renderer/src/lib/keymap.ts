@@ -5,11 +5,10 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import { addDays, today } from '@shared/dates'
 import type { ViewKey } from '@shared/types'
-import { reload, state } from '../store/data'
-import { closeDialog, requestNew, toast, ui } from '../store/ui'
+import { reload, mutate, state } from '../store/data'
+import { askConfirm, closeCardMenu, closeDialog, requestNew, toast, ui } from '../store/ui'
 import { removeTodos } from '@shared/store-ops'
-import { mutate } from '../store/data'
-import { selectedIds, clearSelection } from './selection'
+import { clearSelection, currentRowIds, selectAll, selectedIds } from './selection'
 
 export function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -39,14 +38,21 @@ export function toggleBoard(): void {
   ui.board = !ui.board
 }
 
+/** 删除一律二次确认(单条也确认;回收站视图是彻底删除,文案点明不可恢复) */
 function handleDelete(): void {
   if (selectedIds.size === 0) return
   const ids = [...selectedIds]
   const purge = ui.view === 'trash'
-  void mutate((s) => removeTodos(s, ids, purge)).then(() => {
-    toast(purge ? `已彻底删除 ${ids.length} 项` : `已移入回收站 ${ids.length} 项`)
-    clearSelection()
-  })
+  askConfirm(
+    purge ? '彻底删除' : '移入回收站',
+    purge ? `将彻底删除 ${ids.length} 条任务，无法恢复。` : `将 ${ids.length} 条任务移入回收站。`,
+    () => {
+      void mutate((s) => removeTodos(s, ids, purge)).then(() => {
+        toast(purge ? `已彻底删除 ${ids.length} 项` : `已移入回收站 ${ids.length} 项`)
+        clearSelection()
+      })
+    }
+  )
 }
 
 export function useGlobalKeymap(): void {
@@ -77,6 +83,10 @@ export function useGlobalKeymap(): void {
         ui.confirm = null
         return
       }
+      if (ui.cardMenu) {
+        closeCardMenu()
+        return
+      }
       if (ui.searchOpen) {
         ui.searchOpen = false
         ui.search = ''
@@ -90,8 +100,19 @@ export function useGlobalKeymap(): void {
       return
     }
 
-    // 输入框聚焦时交还原生行为(否则打字会误触)
+    // 输入框聚焦时交还原生行为(否则打字会误触);Ctrl+A 仍保留输入框内的原生全选文本
     if (isTypingTarget(event.target)) return
+
+    // 列表视图全选当前视图;看板下无行源(currentRowIds 返回空)故不生效
+    if (ctrl && key === 'a' && !ui.board) {
+      event.preventDefault()
+      const ids = currentRowIds()
+      if (ids.length > 0) {
+        selectAll(ids)
+        toast(`已选 ${ids.length} 条`)
+      }
+      return
+    }
 
     switch (event.key) {
       case 'n':

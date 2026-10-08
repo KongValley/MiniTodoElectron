@@ -5,6 +5,7 @@ import { bucketsOf } from '@shared/query'
 import type { BoardColumn as BoardColumnData } from '@shared/store-index'
 import { INBOX_NAME, PRIO_NAME, type Prio, type TodoItem } from '@shared/types'
 import TaskCard from './TaskCard.vue'
+import Icon from './Icon.vue'
 import { index } from '../store/index'
 import { useVirtual } from '../lib/virtual'
 
@@ -171,7 +172,9 @@ watch(
     <header class="head">
       <span class="date">{{ label(column.date) }}</span>
       <span class="count">{{ column.items.length }}</span>
-      <button class="add" :data-add="column.date" title="在这一天新建任务" @click="emit('add', column.date)">+</button>
+      <button class="add" :data-add="column.date" title="在这一天新建任务" @click="emit('add', column.date)">
+        <Icon name="plus" />
+      </button>
     </header>
 
     <div
@@ -251,6 +254,9 @@ watch(
   color: var(--text-dim);
   font-size: 15px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .add:hover {

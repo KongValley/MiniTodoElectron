@@ -102,11 +102,9 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       if (!win) return { ok: false, error: '窗口不可用' }
       const picked = await pickAndReadStore(win, typeof preset === 'string' ? preset : undefined)
       if (picked.canceled) return { ok: true, canceled: true }
-      // 导入即落盘(与旧版一致:导入后立刻生效),导入前先备份当前数据
+      // 只读:先备份当前数据(替换与合并都会覆盖 todos.json,留档语义不变),
+      // 再由渲染层弹「替换 / 合并」选择,最终走 store:save 落盘。
       await backupIfDue(currentStore ?? emptyStore())
-      await saveStore(picked.store)
-      currentStore = picked.store
-      setTodayCount(win, countDue(picked.store))
       return { ok: true, canceled: false, store: picked.store, source: picked.source, counts: picked.counts }
     })
   )
@@ -166,11 +164,10 @@ export async function menuImport(win: BrowserWindow, preset?: string): Promise<v
   try {
     const picked = await pickAndReadStore(win, preset)
     if (picked.canceled) return
+    // 只读 + 备份,选择权交给渲染层:备份的语义与旧版一致(导入前留档),
+    // 落盘由渲染层的替换/合并分支走 store:save 完成。
     await backupIfDue(currentStore ?? emptyStore())
-    await saveStore(picked.store)
-    currentStore = picked.store
-    setTodayCount(win, countDue(picked.store))
-    win.webContents.send(CH.uiOpenDialog, 'imported', picked.counts)
+    win.webContents.send(CH.uiOpenDialog, 'import-choice', { store: picked.store, counts: picked.counts })
   } catch (err) {
     console.error('[menu] 导入失败:', err)
     void dialog.showMessageBox(win, {

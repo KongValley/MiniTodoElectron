@@ -306,3 +306,57 @@ export function removeSubtask(store: Store, id: string, subId: string): Store {
 export function setSubtasks(store: Store, id: string, subtasks: Subtask[]): Store {
   return { ...store, todos: store.todos.map((t) => (t.id === id ? { ...t, subtasks } : t)) }
 }
+
+export interface MergeStats {
+  groups: number
+  lists: number
+  todos: number
+}
+
+/**
+ * 合并导入:按 id 去重追加(base 优先),同 id 的条目跳过并计入 skipped。
+ * 引用了被跳过清单的任务改挂收集箱(normalizeStore 对未知 lid 一律归 ''),
+ * 分组/清单的 gid 悬空不处理 —— 侧栏按 gid 查不到时该行不渲染,不崩。
+ * todos 的 seq 重排为 1..n,避免与 base 既有 seq 冲突导致排序平手不确定。
+ */
+export function mergeStore(base: Store, incoming: Store): { store: Store; skipped: MergeStats } {
+  const groupIds = new Set(base.groups.map((g) => g.id))
+  const listIds = new Set(base.lists.map((l) => l.id))
+  const todoIds = new Set(base.todos.map((t) => t.id))
+  const skipped: MergeStats = { groups: 0, lists: 0, todos: 0 }
+
+  const groups = [...base.groups]
+  for (const x of incoming.groups) {
+    if (groupIds.has(x.id)) {
+      skipped.groups++
+      continue
+    }
+    groupIds.add(x.id)
+    groups.push(x)
+  }
+
+  const lists = [...base.lists]
+  for (const x of incoming.lists) {
+    if (listIds.has(x.id)) {
+      skipped.lists++
+      continue
+    }
+    listIds.add(x.id)
+    lists.push(x)
+  }
+
+  const todos = [...base.todos]
+  for (const x of incoming.todos) {
+    if (todoIds.has(x.id)) {
+      skipped.todos++
+      continue
+    }
+    todoIds.add(x.id)
+    todos.push(listIds.has(x.lid) ? x : { ...x, lid: '' })
+  }
+
+  return {
+    store: { version: 2, groups, lists, todos: todos.map((t, i) => ({ ...t, seq: i + 1 })) },
+    skipped
+  }
+}

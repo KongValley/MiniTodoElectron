@@ -12,7 +12,7 @@
 | --- | --- |
 | 视图 | 分组 → 清单两级侧栏；看板（按日期分列，列内按优先级分组）与列表两种视图，`B` 切换 |
 | 任务 | 标题、备注、日期（可「不排期」）、清单、优先级（高/中/低）、状态（待办/已完成/已放弃/回收站） |
-| 增强 | **看板拖拽**改期与同优先级桶内排序、**深色/浅色主题**、**托盘常驻 + 到期通知**、**子任务清单**、**重复任务**、**自动备份 + 导入导出** |
+| 增强 | **看板拖拽**改期与同优先级桶内排序、**深色/浅色主题**、**托盘常驻 + 到期通知**、**子任务清单**、**重复任务**、**右键菜单**（改期/改优先级/完成/删除）、**列表列排序**、**搜索词高亮**、**自动备份 + 导入导出**（导入可选替换/合并） |
 | 数据 | `%APPDATA%\MiniTodoElectron\todos.json`，UTF-8 明文，可直接备份/编辑；每天自动备份到 `backups/`（保留最新 10 份） |
 | 迁移 | 「文件 → 导入旧版数据…」默认指向 `%APPDATA%\MiniTodo\todos.json`，一次性导入旧版数据（导入前自动备份） |
 
@@ -24,6 +24,8 @@
 | `Enter` / `F2` | 打开选中任务（列表视图） |
 | `Del` | 删除选中（回收站视图里是彻底删除） |
 | `B` | 切换看板 / 列表 |
+| `Ctrl+1` / `Ctrl+2` | 菜单「视图 → 看板 / 列表」 |
+| `Ctrl+A` | 列表视图全选当前视图（输入框内仍是原生全选文本） |
 | `Ctrl+F` | 搜索 |
 | `Esc` | 关闭弹窗 / 清空搜索 |
 | `F5` | 刷新 |
@@ -67,7 +69,7 @@
 - 备份：`%APPDATA%\MiniTodoElectron\backups\todos-<时间戳>.json`，每天最多一份，保留最新 10 份
 - 设置：`%APPDATA%\MiniTodoElectron\settings.json`（主题、到期提醒开关与时间）
 - 数据文件损坏时不会静默覆盖：原文件改名保留为 `todos.json.corrupt-<时间戳>`，并提示原因
-- 旧版数据（`%APPDATA%\MiniTodo\todos.json`）通过「文件 → 导入旧版数据…」导入，导入前自动备份当前数据
+- 旧版数据（`%APPDATA%\MiniTodo\todos.json`）通过「文件 → 导入旧版数据…」导入，导入前自动备份当前数据，并可选「替换」或「合并」（合并按 id 跳过重复项，保留现有任务）
 
 ## 构建
 
@@ -75,8 +77,8 @@
 npm install          # 需要 Node ≥ 18；Electron 二进制走 .npmrc 里的国内镜像
 npm run dev          # 开发模式
 npm run build        # typecheck + 构建到 out/
-npm test             # 共享层纯函数自检（node --test，23 项）
-npm run smoke        # 端到端冒烟（真 Electron 真窗口，17 项）
+npm test             # 共享层纯函数自检（node --test，30 项）
+npm run smoke        # 端到端冒烟（真 Electron 真窗口，26 项，含主进程侧断言）
 npm run icon         # 生成 resources/icon.png
 ```
 
@@ -187,10 +189,12 @@ src/renderer/src/store/ui.ts      界面状态
 src/renderer/src/store/settings.ts 设置与主题
 src/renderer/src/lib/virtual.ts   窗口化渲染（固定行高 + 测量式可变高度）
 src/renderer/src/lib/keymap.ts    快捷键
-src/renderer/src/lib/selection.ts 列表多选状态
-src/renderer/src/components/  侧栏 / 顶栏 / 状态栏 / 看板 / 列表 / 各弹窗
+src/renderer/src/lib/selection.ts 列表多选状态 + Ctrl+A 行源
+src/renderer/src/lib/search.ts    搜索词命中片段（标题高亮用）
+src/renderer/src/components/Icon.vue      全站 SVG 图标(线性描边,颜色走 currentColor)
+src/renderer/src/components/  侧栏 / 顶栏 / 状态栏 / 看板 / 列表 / 右键菜单 / 各弹窗
 src/renderer/src/test-api.ts  冒烟用 window.__todoTest
-scripts/run-smokes.mjs    冒烟运行器（17 步，含主进程侧断言）
+scripts/run-smokes.mjs    冒烟运行器（26 步，含主进程侧断言）
 scripts/smoke/step*.js    各步断言
 scripts/gen-perf-data.mjs 生成性能基准数据
 scripts/perf-probe.js     性能探针（长任务 + 墙钟）

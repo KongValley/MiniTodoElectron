@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { today } from '@shared/dates'
 import { moveCard } from '@shared/store-ops'
-import { state, mutate } from '../store/data'
+import { importFromDialog, mutate, state } from '../store/data'
 import { index } from '../store/index'
 import { ui } from '../store/ui'
 import BoardColumn from './BoardColumn.vue'
@@ -89,29 +90,52 @@ function onWheel(event: WheelEvent): void {
   host.scrollLeft += event.deltaY
   hScrollLeft.value = host.scrollLeft
 }
+
+/**
+ * 回到今天:列宽固定 300px 且首列紧贴 0,所以目标列下标 × COL_W 即目标 scrollLeft。
+ * 今天不在列里(无排期任务)时退到「今天之后的最近一列」,都没有则滚到末尾。
+ */
+function scrollToToday(): void {
+  const host = horizontal.value
+  if (!host) return
+  const t0 = today()
+  let idx = columns.value.findIndex((c) => c.date === t0)
+  if (idx < 0) idx = columns.value.findIndex((c) => c.date > t0)
+  if (idx < 0) idx = columns.value.length - 1
+  host.scrollLeft = Math.max(0, idx * COL_W)
+  hScrollLeft.value = host.scrollLeft
+}
 </script>
 
 <template>
   <div class="board" data-testid="board" @dragstart="onDragStart" @dragend="onDragEnd" @wheel="onWheel">
-    <div v-if="columns.length === 0" class="empty">
-      <p>此视图暂无排期任务</p>
-      <button class="btn" data-testid="empty-new" @click="ui.dialog = { mode: 'new' }">新建任务</button>
-    </div>
-
-    <div v-else ref="horizontal" class="columns" data-testid="board-columns" @scroll="onScrollH">
-      <div :style="{ flex: `0 0 ${padLeft}px` }" />
-      <BoardColumn
-        v-for="col in visibleColumns.items"
-        :key="col.date"
-        :column="col"
-        :scroll-top="scrollByDate[col.date] ?? 0"
-        :drag-prio="dragPrio"
-        @scroll="onScroll"
-        @drop="onDrop"
-        @add="onAdd"
-      />
-      <div :style="{ flex: `0 0 ${padRight}px` }" />
-    </div>
+    <template v-if="columns.length === 0">
+      <div class="empty">
+        <p>{{ ui.search ? `没有匹配「${ui.search}」的任务` : '此视图暂无排期任务' }}</p>
+        <div class="empty-actions">
+          <button class="btn" data-testid="empty-new" @click="ui.dialog = { mode: 'new' }">新建任务</button>
+          <button class="btn" data-testid="empty-import" @click="void importFromDialog()">导入旧版数据</button>
+          <button class="btn" data-testid="empty-help" @click="ui.helpOpen = true">查看快捷键</button>
+        </div>
+      </div>
+    </template>
+    <template v-else>
+      <button class="today" data-testid="board-today" title="滚动到今天" @click="scrollToToday">今天</button>
+      <div ref="horizontal" class="columns" data-testid="board-columns" @scroll="onScrollH">
+        <div :style="{ flex: `0 0 ${padLeft}px` }" />
+        <BoardColumn
+          v-for="col in visibleColumns.items"
+          :key="col.date"
+          :column="col"
+          :scroll-top="scrollByDate[col.date] ?? 0"
+          :drag-prio="dragPrio"
+          @scroll="onScroll"
+          @drop="onDrop"
+          @add="onAdd"
+        />
+        <div :style="{ flex: `0 0 ${padRight}px` }" />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -119,6 +143,25 @@ function onWheel(event: WheelEvent): void {
 .board {
   height: 100%;
   overflow: hidden;
+  position: relative;
+}
+
+.today {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 5;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--field-line);
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.today:hover {
+  background: var(--hover);
+  color: var(--accent);
 }
 
 .columns {
@@ -136,6 +179,11 @@ function onWheel(event: WheelEvent): void {
   justify-content: center;
   gap: 12px;
   color: var(--text-mute);
+}
+
+.empty-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .btn {

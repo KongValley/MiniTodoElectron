@@ -26,6 +26,13 @@ t.setSearch('不存在的词')
 await new Promise((r) => setTimeout(r, 80))
 eq(t.listRows().length, 0, '无命中时 0 行')
 
+t.setSearch('周报')
+await new Promise((r) => setTimeout(r, 120))
+truthy(
+  document.querySelectorAll('[data-card] .hl, [data-row] .hl').length > 0,
+  '命中的标题被高亮'
+)
+
 t.setSearch('')
 t.setBoard(true)
 return { hits: 2 }

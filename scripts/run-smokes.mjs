@@ -27,7 +27,15 @@ const scripts = [
   'step15-window.js',
   'step16-tray-notify.js',
   'step17-virtual.js',
-  'step18-single-instance.js'
+  'step18-single-instance.js',
+  'step19-delete-confirm.js',
+  'step20-card-menu.js',
+  'step21-list-sort.js',
+  'step22-import-merge.js',
+  'step23-empty-state.js',
+  'step24-jump-today.js',
+  'step25-select-all.js',
+  'step26-icons.js'
 ]
 
 if (!existsSync(electron)) {

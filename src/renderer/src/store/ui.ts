@@ -1,6 +1,7 @@
 /** 界面状态(视图 / 搜索 / 弹窗 / 提示) */
 import { reactive } from 'vue'
 import type { ViewKey } from '@shared/types'
+import type { ListSort } from '@shared/query'
 
 export interface TaskDialogState {
   mode: 'new' | 'edit'
@@ -13,6 +14,7 @@ export interface ConfirmState {
   title: string
   detail: string
   onOk: () => void
+  secondary?: { label: string; onOk: () => void }
 }
 
 export const ui = reactive({
@@ -26,7 +28,11 @@ export const ui = reactive({
   confirm: null as ConfirmState | null,
   toast: '',
   /** 侧栏分组展开状态(手动收起的分组不被切视图自动展开) */
-  collapsed: {} as Record<string, boolean>
+  collapsed: {} as Record<string, boolean>,
+  /** 任务卡右键菜单位置;null = 关闭 */
+  cardMenu: null as { id: string; x: number; y: number } | null,
+  /** 列表列排序;null = 默认顺序(日期→优先级→清单→seq) */
+  listSort: null as ListSort | null
 })
 
 let toastTimer: number | undefined
@@ -51,6 +57,19 @@ export function closeDialog(): void {
   ui.dialog = null
 }
 
-export function askConfirm(title: string, detail: string, onOk: () => void): void {
-  ui.confirm = { title, detail, onOk }
+export function askConfirm(
+  title: string,
+  detail: string,
+  onOk: () => void,
+  secondary?: ConfirmState['secondary']
+): void {
+  ui.confirm = { title, detail, onOk, secondary }
+}
+
+export function openCardMenu(id: string, x: number, y: number): void {
+  ui.cardMenu = { id, x, y }
+}
+
+export function closeCardMenu(): void {
+  ui.cardMenu = null
 }

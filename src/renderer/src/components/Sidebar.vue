@@ -5,16 +5,29 @@ import { state } from '../store/data'
 import { index } from '../store/index'
 import { setView } from '../lib/keymap'
 import { ui } from '../store/ui'
+import Icon from './Icon.vue'
 
-const VIEW_ICON: Record<string, string> = {
-  all: '☰',
-  today: '☑',
-  tmr: '☀',
-  week7: '▤',
-  inbox: '✉',
-  done: '✓',
-  dropped: '✕',
-  trash: '🗑'
+const VIEW_ICON_NAME: Record<string, string> = {
+  all: 'all',
+  today: 'today',
+  tmr: 'week',
+  week7: 'week',
+  inbox: 'inbox',
+  done: 'done',
+  dropped: 'dropped',
+  trash: 'trash'
+}
+
+/** 每个视图一个语义色(深色模式在 base.css 里提亮) */
+const VIEW_COLOR: Record<string, string> = {
+  all: 'var(--v-all)',
+  today: 'var(--v-today)',
+  tmr: 'var(--v-week)',
+  week7: 'var(--v-week)',
+  inbox: 'var(--v-inbox)',
+  done: 'var(--prio-3)',
+  dropped: 'var(--text-mute)',
+  trash: 'var(--danger)'
 }
 
 const primaryViews = VIEWS.slice(0, 5)
@@ -57,7 +70,7 @@ const listsByGroup = computed(() =>
         :data-view="v"
         @click="setView(v)"
       >
-        <span class="icon">{{ VIEW_ICON[v] }}</span>
+        <span class="icon" :style="{ color: VIEW_COLOR[v] }"><Icon :name="VIEW_ICON_NAME[v] as string" /></span>
         <span class="name">{{ VIEW_NAME[v] }}</span>
         <span class="num">{{ countOf(v) }}</span>
       </button>
@@ -108,7 +121,7 @@ const listsByGroup = computed(() =>
         :data-view="v"
         @click="setView(v)"
       >
-        <span class="icon">{{ VIEW_ICON[v] }}</span>
+        <span class="icon" :style="{ color: VIEW_COLOR[v] }"><Icon :name="VIEW_ICON_NAME[v] as string" /></span>
         <span class="name">{{ VIEW_NAME[v] }}</span>
         <span class="num">{{ countOf(v) }}</span>
       </button>
@@ -168,10 +181,15 @@ const listsByGroup = computed(() =>
 }
 
 .icon {
+  display: inline-flex;
+  align-items: center;
   width: 16px;
-  text-align: center;
-  color: var(--text-dim);
+  height: 16px;
   flex: 0 0 16px;
+}
+
+.icon > svg {
+  display: block;
 }
 
 .name {

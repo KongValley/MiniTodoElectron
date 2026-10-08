@@ -6,10 +6,11 @@
  * 派生数据统一由 store/index.ts 的 index computed 提供。
  */
 import { markRaw, reactive } from 'vue'
-import { emptyStore } from '@shared/store-ops'
+import { emptyStore, mergeStore } from '@shared/store-ops'
 import type { Store } from '@shared/types'
 import { CH } from '@shared/api'
 import { refreshSettings, type Settings } from './settings'
+import { askConfirm, toast } from './ui'
 
 export const state = reactive({
   store: markRaw(emptyStore()) as Store,
@@ -69,8 +70,10 @@ export async function init(): Promise<void> {
   state.ready = true
 }
 
-/** 导入:由渲染层弹提示并确认后落盘(主进程侧菜单导入走 IPC 直接落盘) */
-export async function importFromDialog(preset?: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> {
+/** 导入:选文件 → 备份 → 弹「替换 / 合并」,由用户决定后落盘 */
+export async function importFromDialog(
+  preset?: string
+): Promise<{ ok: boolean; canceled?: boolean; pending?: boolean; error?: string }> {
   const res = (await window.todoAPI.invoke(CH.storeImport, preset)) as {
     ok: boolean
     canceled?: boolean
@@ -80,9 +83,28 @@ export async function importFromDialog(preset?: string): Promise<{ ok: boolean; 
   }
   if (!res.ok) return { ok: false, error: res.error }
   if (res.canceled || !res.store) return { ok: true, canceled: true }
-  setStore(res.store)
-  state.warning = `已导入 ${res.counts?.groups ?? 0} 个分组 / ${res.counts?.lists ?? 0} 个清单 / ${res.counts?.todos ?? 0} 条任务`
-  return { ok: true }
+  const incoming = res.store
+  const c = res.counts ?? {
+    groups: incoming.groups.length,
+    lists: incoming.lists.length,
+    todos: incoming.todos.length
+  }
+  askConfirm(
+    '导入数据',
+    `文件包含 ${c.groups} 个分组 / ${c.lists} 个清单 / ${c.todos} 条任务。\n「替换」会丢弃当前全部数据（导入前已自动备份）；「合并」保留现有任务，同 id 的条目跳过。`,
+    () => {
+      void commit(incoming).then(() => toast(`已替换：${c.groups} 分组 / ${c.lists} 清单 / ${c.todos} 任务`))
+    },
+    {
+      label: '合并进当前数据',
+      onOk: () => {
+        const { store, skipped } = mergeStore(state.store, incoming)
+        const s = skipped.groups + skipped.lists + skipped.todos
+        void commit(store).then(() => toast(s > 0 ? `已合并，跳过 ${s} 条重复` : '已合并'))
+      }
+    }
+  )
+  return { ok: true, pending: true }
 }
 
 export async function exportToDialog(): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }> {

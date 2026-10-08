@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addDays, isDate, label, nextByRepeat, today, week } from './dates'
-import { bucketsOf, countDue, sortedByIndex } from './query'
+import { bucketsOf, countDue, sortedByIndex, type ListSort } from './query'
 import { buildIndex } from './store-index'
 import {
   ACTIVE,
@@ -20,6 +20,7 @@ import {
   addTodo,
   completeTodo,
   emptyStore,
+  mergeStore,
   moveCard,
   newId,
   normalizeStore,
@@ -478,4 +479,104 @@ test('label() 连续多次调用结果稳定', () => {
   for (let i = 0; i < 50; i++) {
     assert.deepEqual(dates.map((x) => label(x)), first, `第 ${i} 轮输出应与首轮一致`)
   }
+})
+
+test('mergeStore 按 id 追加并统计跳过数', () => {
+  const base: Store = {
+    ...emptyStore(),
+    groups: [
+      { id: 'g1', name: '工作', order: 0 },
+      { id: 'g2', name: '生活', order: 1 }
+    ],
+    lists: [{ id: 'l1', gid: 'g1', name: '内容', color: '#3A7AFE', order: 0 }],
+    todos: [todo({ id: 't1', lid: 'l1', title: '已有' })]
+  }
+  const incoming: Store = {
+    ...emptyStore(),
+    groups: [{ id: 'g2', name: '生活(重复)', order: 2 }],
+    lists: [
+      { id: 'l1', gid: 'g1', name: '内容(重复)', color: '#000000', order: 1 },
+      { id: 'l2', gid: 'g1', name: '新增清单', color: '#3C9954', order: 1 }
+    ],
+    todos: [
+      todo({ id: 't1', lid: 'l1', title: '重复任务' }),
+      todo({ id: 't2', lid: 'l2', title: '新任务' })
+    ]
+  }
+
+  const { store, skipped } = mergeStore(base, incoming)
+  assert.deepEqual(skipped, { groups: 1, lists: 1, todos: 1 })
+  assert.equal(store.groups.length, 2, '同 id 分组不追加')
+  assert.equal(store.groups[1]?.name, '生活', 'base 的分组内容不被覆盖')
+  assert.equal(store.lists.length, 2, '同 id 清单不追加')
+  assert.equal(store.lists[1]?.id, 'l2')
+  assert.equal(store.todos.length, 2, '同 id 任务不追加')
+
+  // seq 重排为 1..n(与 id 顺序一致),不平手
+  assert.deepEqual(
+    store.todos.map((t) => t.seq),
+    [1, 2]
+  )
+  assert.equal(store.todos[1]?.title, '新任务')
+})
+
+test('mergeStore 引用了不存在的清单的任务改挂收集箱', () => {
+  // incoming 只带任务、不带清单定义:该 lid 既不在 base 也不会被追加 → 归一为收集箱
+  const base: Store = { ...emptyStore(), lists: [{ id: 'l1', gid: 'g1', name: '保留', color: '#3A7AFE', order: 0 }] }
+  const incoming: Store = {
+    ...emptyStore(),
+    lists: [],
+    todos: [todo({ id: 't9', lid: 'lX', title: '指向不存在的清单' })]
+  }
+  const { store } = mergeStore(base, incoming)
+  assert.equal(store.todos[0]?.lid, '', '未知 lid 归一为收集箱')
+  assert.equal(store.todos.length, 1)
+
+  // 被跳过的同 id 清单引用仍有效:base 已有 l1,不必改挂收集箱
+  const dupIncoming: Store = {
+    ...emptyStore(),
+    lists: [{ id: 'l1', gid: 'g1', name: '被跳过', color: '#3C9954', order: 0 }],
+    todos: [todo({ id: 't8', lid: 'l1', title: '指向被跳过清单' })]
+  }
+  const second = mergeStore(base, dupIncoming)
+  assert.equal(second.skipped.lists, 1)
+  assert.equal(second.store.todos[0]?.lid, 'l1')
+
+  // 合并结果仍是合法 store:再过一次 normalizeStore 应无变化
+  assert.deepEqual(normalizeStore(JSON.parse(JSON.stringify(store))), store)
+})
+
+test('sortedByIndex 的 sort 参数:升/降/未排期恒末位', () => {
+  const t = today()
+  const store: Store = {
+    ...emptyStore(),
+    lists: [
+      { id: 'l1', gid: 'g1', name: '甲清单', color: '#3A7AFE', order: 0 },
+      { id: 'l2', gid: 'g1', name: '乙清单', color: '#3C9954', order: 1 }
+    ],
+    todos: [
+      todo({ id: 'a', lid: 'l2', date: addDays(t, 1), prio: 3, seq: 1 }),
+      todo({ id: 'b', lid: 'l1', date: t, prio: 2, seq: 2 }),
+      todo({ id: 'c', lid: 'l1', date: '', prio: 1, seq: 3 }),
+      todo({ id: 'd', lid: 'l2', date: addDays(t, 5), prio: 1, seq: 4 })
+    ]
+  }
+  const idx = buildIndex(store, '')
+  const ids = (sort: ListSort): string[] => sortedByIndex(idx, 'all', sort).map((x) => x.id)
+
+  // 日期升序:未排期恒在末位;降序时同样在末位(不参与翻转)
+  assert.deepEqual(ids({ key: 'date', desc: false }), ['b', 'a', 'd', 'c'])
+  assert.deepEqual(ids({ key: 'date', desc: true }), ['d', 'a', 'b', 'c'])
+  // 未排期对任意键都恒末位;prio 键上 d(1) > b(2) > a(3) 竞逐主键
+  assert.deepEqual(ids({ key: 'prio', desc: false }), ['d', 'b', 'a', 'c'])
+  assert.deepEqual(ids({ key: 'prio', desc: true }), ['a', 'b', 'd', 'c'])
+  // 清单名:甲清单(l1)在前;同清单内用 seq 平手,desc 只翻主键不翻 seq
+  assert.deepEqual(ids({ key: 'list', desc: false }), ['b', 'a', 'd', 'c'])
+  assert.deepEqual(ids({ key: 'list', desc: true }), ['a', 'd', 'b', 'c'])
+
+  // null = 默认顺序(日期→优先级→清单名→seq),与旧行为逐字节一致
+  assert.deepEqual(
+    sortedByIndex(idx, 'all', null).map((x) => x.id),
+    sortedByIndex(idx, 'all').map((x) => x.id)
+  )
 })

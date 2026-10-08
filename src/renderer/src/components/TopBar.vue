@@ -4,6 +4,7 @@ import { viewTitle } from '@shared/query'
 import { state } from '../store/data'
 import { ui } from '../store/ui'
 import { newTaskPreset, toggleBoard } from '../lib/keymap'
+import Icon from './Icon.vue'
 
 const searchInput = ref<HTMLInputElement | null>(null)
 
@@ -39,7 +40,7 @@ function onNew(): void {
         @keydown.esc="closeSearch"
       />
       <button class="icon-btn" data-testid="search-toggle" title="搜索 (Ctrl+F)" @click="ui.searchOpen ? closeSearch() : (ui.searchOpen = true)">
-        ⌕
+        <Icon name="search" />
       </button>
     </div>
 
@@ -88,6 +89,9 @@ function onNew(): void {
   border-radius: 6px;
   color: var(--text-dim);
   font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon-btn:hover {

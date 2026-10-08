@@ -84,16 +84,39 @@ function hitsFor(index: StoreIndex, view: ViewKey): TodoItem[] {
   }
 }
 
-/** 视图内全部任务,按 日期 → 优先级 → 清单名 → 创建顺序 排序(清单名走索引查表) */
-export function sortedByIndex(index: StoreIndex, view: ViewKey): TodoItem[] {
+export type ListSortKey = 'date' | 'prio' | 'list'
+export interface ListSort {
+  key: ListSortKey
+  desc: boolean
+}
+
+/** 视图内全部任务,排序由 sort 决定;null = 默认顺序(日期→优先级→清单名→seq) */
+export function sortedByIndex(index: StoreIndex, view: ViewKey, sort: ListSort | null = null): TodoItem[] {
   const nameOf = (lid: string): string => index.listOf.get(lid)?.name ?? INBOX_NAME
+  if (sort === null) {
+    return hitsFor(index, view).sort((x, y) => {
+      const kx = dateKey(x.date)
+      const ky = dateKey(y.date)
+      if (kx !== ky) return kx < ky ? -1 : 1
+      if (x.prio !== y.prio) return x.prio - y.prio
+      const ln = nameOf(x.lid).localeCompare(nameOf(y.lid), 'zh')
+      if (ln !== 0) return ln
+      return x.seq - y.seq
+    })
+  }
+
+  const flip = (r: number): number => (sort.desc ? -r : r)
   return hitsFor(index, view).sort((x, y) => {
-    const kx = dateKey(x.date)
-    const ky = dateKey(y.date)
-    if (kx !== ky) return kx < ky ? -1 : 1
-    if (x.prio !== y.prio) return x.prio - y.prio
-    const ln = nameOf(x.lid).localeCompare(nameOf(y.lid), 'zh')
-    if (ln !== 0) return ln
+    // 未排期恒在末位,不参与升降翻转(排序键为空即视为最后)
+    if (x.date === '' || y.date === '') {
+      if (x.date === y.date) return x.seq - y.seq
+      return x.date === '' ? 1 : -1
+    }
+    let r = 0
+    if (sort.key === 'date') r = dateKey(x.date) < dateKey(y.date) ? -1 : dateKey(x.date) > dateKey(y.date) ? 1 : 0
+    else if (sort.key === 'prio') r = x.prio - y.prio
+    else r = nameOf(x.lid).localeCompare(nameOf(y.lid), 'zh')
+    if (r !== 0) return flip(r)
     return x.seq - y.seq
   })
 }

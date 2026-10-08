@@ -10,10 +10,13 @@ import TaskDialog from './components/TaskDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import HelpDialog from './components/HelpDialog.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import CardMenu from './components/CardMenu.vue'
 import Toast from './components/Toast.vue'
-import { init, state } from './store/data'
+import { init, state, commit } from './store/data'
 import { applyTheme, refreshSettings } from './store/settings'
-import { toast, ui } from './store/ui'
+import { askConfirm, toast, ui } from './store/ui'
+import { mergeStore } from '@shared/store-ops'
+import type { Store } from '@shared/types'
 import { useGlobalKeymap } from './lib/keymap'
 
 useGlobalKeymap()
@@ -42,6 +45,23 @@ onMounted(async () => {
       const c = args[1] as { groups: number; lists: number; todos: number } | undefined
       toast(`已导入 ${c?.groups ?? 0} 个分组 / ${c?.lists ?? 0} 个清单 / ${c?.todos ?? 0} 条任务`)
       void init()
+    } else if (kind === 'import-choice') {
+      const c = args[1] as { store: Store; counts: { groups: number; lists: number; todos: number } }
+      askConfirm(
+        '导入数据',
+        `文件包含 ${c.counts.groups} 个分组 / ${c.counts.lists} 个清单 / ${c.counts.todos} 条任务。\n「替换」会丢弃当前全部数据（导入前已自动备份）；「合并」保留现有任务，同 id 的条目跳过。`,
+        () => {
+          void commit(c.store).then(() => toast('已替换'))
+        },
+        {
+          label: '合并进当前数据',
+          onOk: () => {
+            const { store, skipped } = mergeStore(state.store, c.store)
+            const s = skipped.groups + skipped.lists + skipped.todos
+            void commit(store).then(() => toast(s > 0 ? `已合并，跳过 ${s} 条重复` : '已合并'))
+          }
+        }
+      )
     } else if (kind === 'exported') toast(`已导出到 ${String(args[1] ?? '')}`)
   })
 })
@@ -69,6 +89,7 @@ onBeforeUnmount(() => {
     <SettingsDialog v-if="ui.settingsOpen" />
     <HelpDialog v-if="ui.helpOpen" />
     <ConfirmDialog v-if="ui.confirm" />
+    <CardMenu v-if="ui.cardMenu" />
     <Toast v-if="ui.toast" :text="ui.toast" />
   </div>
 </template>

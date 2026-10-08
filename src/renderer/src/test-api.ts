@@ -9,6 +9,7 @@ import {
   addSubtask,
   addTodo,
   completeTodo,
+  mergeStore,
   moveCard,
   normalizeStore,
   removeTodos,
@@ -43,6 +44,12 @@ export interface TodoTestAPI {
   toggleSubtask: (id: string, subId: string) => Promise<void>
 
   importJson: (text: string) => Promise<{ groups: number; lists: number; todos: number }>
+  importMerge: (
+    text: string
+  ) => Promise<{
+    counts: { groups: number; lists: number; todos: number }
+    skipped: { groups: number; lists: number; todos: number }
+  }>
 
   theme: () => string
   setTheme: (theme: Theme) => Promise<void>
@@ -107,6 +114,15 @@ export function installTestApi(): void {
       const parsed = normalizeStore(JSON.parse(text))
       await commit(parsed)
       return { groups: parsed.groups.length, lists: parsed.lists.length, todos: parsed.todos.length }
+    },
+    importMerge: async (text) => {
+      const incoming = normalizeStore(JSON.parse(text))
+      const { store, skipped } = mergeStore(state.store, incoming)
+      await commit(store)
+      return {
+        counts: { groups: store.groups.length, lists: store.lists.length, todos: store.todos.length },
+        skipped
+      }
     },
 
     theme: () => effectiveTheme(),

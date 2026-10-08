@@ -17,6 +17,7 @@ import {
 } from '@shared/types'
 import { mutate, state } from '../store/data'
 import { closeDialog, ui } from '../store/ui'
+import Icon from './Icon.vue'
 
 const dialog = ui.dialog as { mode: 'new' | 'edit'; id?: string; presetDate?: string; presetList?: string }
 
@@ -159,10 +160,10 @@ function removeSub(index: number): void {
             <div v-for="(s, i) in form.subtasks" :key="s.id" class="sub-row">
               <input v-model="s.done" type="checkbox" />
               <input v-model="s.title" class="sub-title" />
-              <button class="x" @click="removeSub(i)">✕</button>
+              <button class="x" @click="removeSub(i)"><Icon name="close" :size="12" /></button>
             </div>
             <div class="sub-row">
-              <span class="plus">+</span>
+              <span class="plus"><Icon name="plus" :size="13" /></span>
               <input v-model="newSub" class="sub-title" placeholder="添加子任务，回车确认" @keydown.enter.prevent="addSub" />
             </div>
           </div>
@@ -274,11 +275,17 @@ function removeSub(index: number): void {
   width: 15px;
   text-align: center;
   color: var(--text-mute);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .x {
   color: var(--text-mute);
   padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .x:hover {

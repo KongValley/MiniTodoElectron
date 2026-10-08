@@ -7,6 +7,12 @@ function ok(): void {
   action?.()
 }
 
+function onSecondary(): void {
+  const action = ui.confirm?.secondary?.onOk
+  ui.confirm = null
+  action?.()
+}
+
 function cancel(): void {
   ui.confirm = null
 }
@@ -21,6 +27,9 @@ function cancel(): void {
         <div class="foot">
           <span class="spacer" />
           <button class="btn" data-testid="confirm-cancel" @click="cancel">取消</button>
+          <button v-if="ui.confirm?.secondary" class="btn" data-testid="confirm-secondary" @click="onSecondary">
+            {{ ui.confirm.secondary.label }}
+          </button>
           <button class="btn danger" data-testid="confirm-ok" @click="ok">确定</button>
         </div>
       </div>
