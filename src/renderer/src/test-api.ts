@@ -3,7 +3,7 @@
  * 全部走与 UI 相同的 store-ops 纯函数与 store,不另写一套逻辑。
  */
 import { isDate, label } from '@shared/dates'
-import { bucketsOf, sortedByIndex } from '@shared/query'
+import { bucketsOf, columnsForView, sortedByIndex } from '@shared/query'
 import { index } from './store/index'
 import {
   addSubtask,
@@ -139,7 +139,7 @@ export function installTestApi(): void {
     },
 
     boardColumns: () =>
-      index.value.columns.map((c) => ({
+      columnsForView(index.value, ui.view).map((c) => ({
         date: c.date,
         prios: bucketsOf(c.items).map((b) => b.prio),
         ids: c.items.map((t) => t.id)
@@ -147,7 +147,7 @@ export function installTestApi(): void {
     listRows: () =>
       sortedByIndex(index.value, ui.view).map((t) => ({ id: t.id, title: t.title, date: t.date })),
     buckets: (date) => {
-      const col = index.value.columns.find((c) => c.date === date)
+      const col = columnsForView(index.value, ui.view).find((c) => c.date === date)
       if (!col) return []
       return bucketsOf(col.items).map((b) => ({ prio: b.prio, ids: b.items.map((t) => t.id) }))
     },

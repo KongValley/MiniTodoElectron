@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addDays, isDate, label, nextByRepeat, today, week } from './dates'
-import { bucketsOf, countDue, sortedByIndex, type ListSort } from './query'
+import { bucketsOf, columnsForView, countDue, sortedByIndex, type ListSort } from './query'
 import { buildIndex } from './store-index'
 import {
   ACTIVE,
@@ -14,7 +14,8 @@ import {
   DROPPED,
   TRASH,
   type Store,
-  type TodoItem
+  type TodoItem,
+  type ViewKey
 } from './types'
 import {
   addTodo,
@@ -544,6 +545,41 @@ test('mergeStore 引用了不存在的清单的任务改挂收集箱', () => {
 
   // 合并结果仍是合法 store:再过一次 normalizeStore 应无变化
   assert.deepEqual(normalizeStore(JSON.parse(JSON.stringify(store))), store)
+})
+
+test('columnsForView 按视图过滤后分桶,未排期不进列', () => {
+  const t = today()
+  const t1 = addDays(t, 1)
+  const t30 = addDays(t, 30)
+  const store: Store = {
+    ...emptyStore(),
+    todos: [
+      todo({ id: 'a', date: t, status: DONE }),
+      todo({ id: 'b', date: t }),
+      todo({ id: 'c', date: t1 }),
+      todo({ id: 'd', date: t30 }),
+      todo({ id: 'e', date: '' })
+    ]
+  }
+  const idx = buildIndex(store, '')
+  const dates = (view: ViewKey): string[] => columnsForView(idx, view).map((c) => c.date)
+
+  // 索引本身是全量的:侧栏计数与搜索命中共用
+  assert.deepEqual(idx.columns.map((c) => c.date), [t, t1, t30])
+  // today:只剩今天
+  assert.deepEqual(dates('today'), [t])
+  // tmr:只剩明天
+  assert.deepEqual(dates('tmr'), [t1])
+  // week7 = [今天, 今天+6],不含 +30
+  assert.deepEqual(dates('week7'), [t, t1])
+  // all:含全部三个日期,未排期不进列
+  assert.deepEqual(dates('all'), [t, t1, t30])
+  // done 视图:已完成的那条也在自己的日期列里
+  assert.deepEqual(dates('done'), [t])
+
+  // 列内只放该视图命中的任务:today 列不含已完成的那条
+  const todayCol = columnsForView(idx, 'today')[0]
+  assert.deepEqual(todayCol?.items.map((x) => x.id), ['b'])
 })
 
 test('sortedByIndex 的 sort 参数:升/降/未排期恒末位', () => {

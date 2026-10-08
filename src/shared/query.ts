@@ -16,7 +16,7 @@ import {
   type ViewKey
 } from './types'
 import { addDays, today } from './dates'
-import type { StoreIndex } from './store-index'
+import type { BoardColumn, StoreIndex } from './store-index'
 
 /** 未排期排在最后(与旧版 DateKey 的 '9999-12-31' 一致) */
 const dateKey = (d: string): string => (d === '' ? '9999-12-31' : d)
@@ -45,7 +45,7 @@ export function countDue(store: Store): number {
 }
 
 /** 该视图命中的任务集合(取自索引,不再重新扫描 store) */
-function hitsFor(index: StoreIndex, view: ViewKey): TodoItem[] {
+export function hitsFor(index: StoreIndex, view: ViewKey): TodoItem[] {
   if (view.startsWith('list:')) {
     const lid = view.slice(5)
     return index.hits.filter((t) => t.status === ACTIVE && t.lid === lid)
@@ -88,6 +88,22 @@ export type ListSortKey = 'date' | 'prio' | 'list'
 export interface ListSort {
   key: ListSortKey
   desc: boolean
+}
+
+/**
+ * 看板列:先按当前视图过滤,再按日期分桶(日期升序)。
+ * 未排期('')不进看板列 —— 看板按日期分列,未排期只在列表视图有意义。
+ * index.columns 是全量扫描的(侧栏计数/搜索命中都用它),不能直接给看板用。
+ */
+export function columnsForView(index: StoreIndex, view: ViewKey): BoardColumn[] {
+  const byDate = new Map<string, TodoItem[]>()
+  for (const t of hitsFor(index, view)) {
+    if (t.date === '') continue
+    const arr = byDate.get(t.date)
+    if (arr) arr.push(t)
+    else byDate.set(t.date, [t])
+  }
+  return [...byDate.keys()].sort().map((date) => ({ date, items: byDate.get(date) as TodoItem[] }))
 }
 
 /** 视图内全部任务,排序由 sort 决定;null = 默认顺序(日期→优先级→清单名→seq) */

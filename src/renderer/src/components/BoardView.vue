@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { today } from '@shared/dates'
+import { columnsForView } from '@shared/query'
 import { moveCard } from '@shared/store-ops'
 import { importFromDialog, mutate, state } from '../store/data'
 import { index } from '../store/index'
@@ -10,7 +11,8 @@ import Icon from './Icon.vue'
 
 const COL_W = 300
 
-const columns = computed(() => index.value.columns)
+/** 看板列受当前视图过滤(切「今天/明天/最近7天」列数跟着变) */
+const columns = computed(() => columnsForView(index.value, ui.view))
 /** 每列竖向滚动位置,按日期留存(重排/切视图后不丢) */
 const scrollByDate = reactive<Record<string, number>>({})
 const dragId = ref('')
