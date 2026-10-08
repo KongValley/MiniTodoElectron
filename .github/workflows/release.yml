@@ -129,6 +129,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # 必须 checkout:创建 Release 那步要从 package.json 读版本号来拼 tag。
+      # 本 job 跑在 ubuntu 上,不像 build job 那样天然有仓库 —— 漏了 checkout
+      # 会在 node -p require('./package.json') 处 MODULE_NOT_FOUND。
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: pkg-*
