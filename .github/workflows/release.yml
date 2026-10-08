@@ -101,10 +101,26 @@ jobs:
       - name: 打包
         run: node scripts/package-win.mjs ${{ matrix.combo }}
 
+      # electron-builder 会在 release/ 下留 win-unpacked/、win-ia32-unpacked/ 等
+      # 暂存目录,`release/*/` 会把它们一并匹配进去(每个多带 ~170MB)。这里显式算出
+      # 分发目录名,只上传那一个 —— 包内也只有真正要发布的东西。
+      - name: 定位分发目录
+        id: locate
+        run: |
+          set -euo pipefail
+          case "${{ matrix.combo }}" in
+            win7-ia32)  LABEL="Win7-32位" ;;
+            win7-x64)   LABEL="Win7-64位" ;;
+            win10-ia32) LABEL="Win10-32位" ;;
+            win10-x64)  LABEL="Win10-64位" ;;
+          esac
+          [ -d "release/$LABEL" ] || { echo "::error::分发目录 release/$LABEL 不存在"; exit 1; }
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.combo }}
-          path: release/*/
+          path: release/${{ steps.locate.outputs.label }}/
           if-no-files-found: error
           retention-days: 7
 
@@ -118,17 +134,21 @@ jobs:
           pattern: pkg-*
           path: release
 
-      # 摊平成单个资产目录:exe 与 msu 的文件名已按架构唯一,不会互相覆盖;
-      # 两个 Win7 架构各有同名「安装说明.txt」,只取一份
+      # 摊平成单个资产目录。只收 mini-todo-*.exe(package-win.mjs 的命名约定),
+      # 不要用 '*.exe' —— electron-builder 会在打包目录里留下 elevate.exe 这类
+      # 助手程序,一并发布会让用户困惑。
+      # .msu 只存在于「前置补丁」子目录;两个 Win7 架构各有同名「安装说明.txt」,只取一份。
       - name: 汇总产物
         run: |
           set -euo pipefail
           mkdir -p dist
-          find release -name '*.exe'  -exec cp {} dist/ \;
-          find release -name '*.msu'  -exec cp {} dist/ \;
+          find release -name 'mini-todo-*.exe' -exec cp {} dist/ \;
+          find release -name '*.msu'            -exec cp {} dist/ \;
           find release -name '安装说明.txt' | sort | head -1 | xargs -r -I{} cp {} dist/
           echo "--- 资产清单 ---"
           ls -lh dist
+          N=$(ls dist | wc -l)
+          [ "$N" -eq 13 ] || { echo "::error::预期 13 个资产(8 exe + 4 msu + 1 说明),实际 $N"; exit 1; }
 
       - name: 创建 Release
         if: ${{ github.event_name == 'push' || inputs.publish }}
