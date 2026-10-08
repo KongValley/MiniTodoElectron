@@ -76,6 +76,11 @@ function registerAppProtocol(): void {
 let mainWindow: BrowserWindow | null = null
 let forceQuit = false
 let trayHintShown = false
+/** 渲染进程连续崩溃次数(成功加载后归零);超过上限就不再自动重载 */
+let rendererCrashes = 0
+const RENDERER_RELOAD_LIMIT = 3
+/** 「崩过又加载成功」标记,粘住不动,供冒烟主进程侧断言 */
+let rendererRecovered = false
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -117,8 +122,35 @@ function createWindow(): void {
     }
   })
 
+  // 渲染进程崩了窗口不会自己消失,只会留一块永远不刷新的空白 —— 用户看到的就是
+  // 「应用变白了」而且没有任何出路(关闭是隐藏到托盘,重开又是空窗)。
+  // 这里重载页面让它自愈;连续崩(oom 之类)超过上限就不再重载,免得无限刷屏。
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
-    console.error('[renderer] 进程崩溃:', details.reason)
+    rendererCrashes += 1
+    console.error(`[renderer] 进程崩溃(${details.reason}),第 ${rendererCrashes} 次`)
+    const win = mainWindow
+    if (!win || win.isDestroyed()) return
+    if (rendererCrashes > RENDERER_RELOAD_LIMIT) {
+      console.error('[renderer] 连续崩溃超过上限,停止自动重载,请手动重启应用')
+      return
+    }
+    win.reload()
+  })
+
+  // 成功加载即视为恢复,重置计数
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (rendererCrashes > 0) rendererRecovered = true
+    rendererCrashes = 0
+    // 冒烟:在渲染进程就绪后注入一次崩溃,用来验证上面的自愈逻辑(见 step27)。
+    // 延迟要落在「冒烟脚本跑完」之后、「冒烟收尾截图」之前 —— 由 STEP_SETTLE_MS 配合。
+    if (process.env['TODO_SMOKE_CRASH_PROBE'] === '1') {
+      setTimeout(() => {
+        const w = mainWindow
+        if (w && !w.isDestroyed() && !w.webContents.isCrashed()) {
+          w.webContents.forcefullyCrashRenderer()
+        }
+      }, 1200)
+    }
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -171,6 +203,9 @@ function mainChecks(): Record<string, unknown> {
     title: win ? win.getTitle() : null,
     minSize: win ? win.getMinimumSize() : null,
     dataDir: dataDir(),
+    // 渲染进程崩溃自愈:recovered 在「崩过之后又加载成功」时置位(粘住,便于主进程侧断言)
+    rendererRecovered,
+    windowAlive: !!win && !win.isDestroyed(),
     closeProbe,
     singleInstance,
     notify: notify

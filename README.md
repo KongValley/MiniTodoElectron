@@ -78,7 +78,7 @@ npm install          # 需要 Node ≥ 18；Electron 二进制走 .npmrc 里的�
 npm run dev          # 开发模式
 npm run build        # typecheck + 构建到 out/
 npm test             # 共享层纯函数自检（node --test，31 项）
-npm run smoke        # 端到端冒烟（真 Electron 真窗口，26 项，含主进程侧断言）
+npm run smoke        # 端到端冒烟（真 Electron 真窗口，27 项，含主进程侧断言与崩溃自愈）
 npm run icon         # 生成 resources/icon.png
 ```
 
@@ -231,7 +231,7 @@ src/renderer/src/lib/search.ts    搜索词命中片段（标题高亮用）
 src/renderer/src/components/Icon.vue      全站 SVG 图标（PART 表=多部件实心彩色，配色走 --ico-* token；STROKE/FILL 表=单色描边，跟随 currentColor）
 src/renderer/src/components/  侧栏 / 顶栏 / 状态栏 / 看板 / 列表 / 右键菜单 / 各弹窗
 src/renderer/src/test-api.ts  冒烟用 window.__todoTest
-scripts/run-smokes.mjs    冒烟运行器（26 步，含主进程侧断言）
+scripts/run-smokes.mjs    冒烟运行器（27 步，含主进程侧断言与崩溃注入）
 scripts/smoke/step*.js    各步断言
 scripts/gen-perf-data.mjs 生成性能基准数据
 scripts/perf-probe.js     性能探针（长任务 + 墙钟）
@@ -249,6 +249,7 @@ scripts/package-win.mjs   单架构打包 + 前置补丁分发
 - 看板卡片高度可变，虚拟滚动先按估算高度布局、挂载后按实测校正，极快滚动时可能有 1 帧的偏移跳动
 - 提醒时间用本机时区，不处理跨时区
 - 应用基于 Electron 22（Chromium 108）：这是为兼容 Win7 而选，现代机器上 Chromium 偏旧
+- 渲染进程崩溃会自动重载页面自愈（连续崩超 3 次停止重载，需手动重启）；但崩溃瞬间的未落盘改动会丢——`todos.json` 每次变更即写盘，窗口内尚未提交的操作才会丢
 
 ## 许可
 
