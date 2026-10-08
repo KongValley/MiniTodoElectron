@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUpdated, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { label } from '@shared/dates'
 import { bucketsOf } from '@shared/query'
 import type { BoardColumn as BoardColumnData } from '@shared/store-index'
@@ -14,6 +14,8 @@ const props = defineProps<{
   scrollTop: number
   /** 正在拖动的卡片优先级(0 = 无拖动);插入位只在同优先级桶内计算 */
   dragPrio: number
+  /** 正在拖动的卡片 id:插入位统计要排除自身,才与 moveCard 的桶一致 */
+  dragId: string
 }>()
 
 const emit = defineEmits<{
@@ -58,6 +60,7 @@ const estimateOf = (r: Row): number => CARD_ESTIMATE + (r.head ? HEAD_ESTIMATE :
 
 const localScrollTop = ref(props.scrollTop)
 const viewportH = ref(400)
+let ro: ResizeObserver | null = null
 const virtual = useVirtual<Row>({
   items: () => rows.value,
   keyOf: (r) => r.item.id,
@@ -67,9 +70,10 @@ const virtual = useVirtual<Row>({
   overscan: 4
 })
 
-/** 同优先级卡片数(拖入空桶时 index = 0) */
+/** 同优先级卡片数(拖入空桶时 index = 0)。排除被拖动的那张:
+ *  moveCard 的桶也不含自身,两边都排除才叫同一个位置 */
 function samePrioCount(): number {
-  return props.column.items.filter((t) => t.prio === props.dragPrio).length
+  return props.column.items.filter((t) => t.prio === props.dragPrio && t.id !== props.dragId).length
 }
 
 /**
@@ -81,7 +85,9 @@ function indexFromEvent(event: DragEvent): number {
   const host = scroller.value
   if (!host || props.dragPrio === 0) return samePrioCount()
 
-  const rendered = [...host.querySelectorAll<HTMLElement>('[data-card]')]
+  // 必须查 vrow 包装层而不是 [data-card]:data-row 挂在 vrow 上,
+  // 卡片自己没有 → 读不到时 hitRow 恒为末尾,向下拖会被算到桶尾而差一格
+  const rendered = [...host.querySelectorAll<HTMLElement>('[data-vrow]')]
   let hitRow = rows.value.length
   for (const el of rendered) {
     const rect = el.getBoundingClientRect()
@@ -93,7 +99,9 @@ function indexFromEvent(event: DragEvent): number {
 
   let bucketPos = 0
   for (let i = 0; i < hitRow && i < rows.value.length; i++) {
-    if ((rows.value[i] as Row).prio === props.dragPrio) bucketPos++
+    if ((rows.value[i] as Row).prio === props.dragPrio && (rows.value[i] as Row).item.id !== props.dragId) {
+      bucketPos++
+    }
   }
   return bucketPos
 }
@@ -147,10 +155,14 @@ onMounted(() => {
     localScrollTop.value = props.scrollTop
   }
   measureAll()
-  new ResizeObserver(() => {
+  ro = new ResizeObserver(() => {
     viewportH.value = host.clientHeight
-  }).observe(host)
+  })
+  ro.observe(host)
 })
+
+// 不 disconnect 会让被销毁的列仍被观察,内存只增不减
+onBeforeUnmount(() => ro?.disconnect())
 
 // 每次重渲染后补测新出现的行(高度未知的行才需要,measure 内部会跳过未变化的)
 onUpdated(() => measureAll())
@@ -192,6 +204,7 @@ watch(
         <div
           v-for="v in virtual.state.value.visible"
           :key="v.item.item.id"
+          class="vrow"
           :data-vrow="v.item.item.id"
           :data-row="v.index"
         >
@@ -269,6 +282,12 @@ watch(
   overflow-y: auto;
   padding: 10px;
   min-height: 0;
+}
+
+/* BFC:卡片/组标题的外边距否则会折叠逃出盒子,offsetHeight 恒少 8~14px,
+   前缀和逐行累积后长列滚动会整块上移、底部留大片空白 */
+.vrow {
+  display: flow-root;
 }
 
 .group-head {

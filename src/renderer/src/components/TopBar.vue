@@ -2,7 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { viewTitle } from '@shared/query'
 import { state } from '../store/data'
-import { ui } from '../store/ui'
+import { requestNew, ui } from '../store/ui'
 import { newTaskPreset, toggleBoard } from '../lib/keymap'
 import Icon from './Icon.vue'
 
@@ -21,7 +21,9 @@ function closeSearch(): void {
 }
 
 function onNew(): void {
-  ui.dialog = { mode: 'new', ...newTaskPreset() }
+  // 走 requestNew:newTaskPreset 给的是 { date, list },对话框读的是 presetDate/presetList,
+  // 直接展开 ui.dialog 会让预设静默失效
+  requestNew(newTaskPreset())
 }
 </script>
 

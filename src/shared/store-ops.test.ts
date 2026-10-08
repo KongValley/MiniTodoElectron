@@ -6,26 +6,35 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { addDays, isDate, label, nextByRepeat, today, week } from './dates'
-import { bucketsOf, columnsForView, countDue, sortedByIndex, type ListSort } from './query'
+import { bucketsOf, columnsForView, countDue, hitsFor, sortedByIndex, type ListSort } from './query'
 import { buildIndex } from './store-index'
 import {
   ACTIVE,
   DONE,
   DROPPED,
+  INBOX_NAME,
   TRASH,
+  VIEW_NAME,
   type Store,
   type TodoItem,
   type ViewKey
 } from './types'
 import {
+  addGroup,
+  addList,
   addTodo,
   completeTodo,
   emptyStore,
   mergeStore,
   moveCard,
+  moveGroup,
+  moveList,
   newId,
   normalizeStore,
+  renameGroup,
   seedStore,
+  removeGroup,
+  removeList,
   removeTodos,
   setStatus,
   toggleSubtask,
@@ -615,4 +624,241 @@ test('sortedByIndex 的 sort 参数:升/降/未排期恒末位', () => {
     sortedByIndex(idx, 'all', null).map((x) => x.id),
     sortedByIndex(idx, 'all').map((x) => x.id)
   )
+})
+
+test('normalizeStore 对重复 id 换新 id 而不是丢弃条目', () => {
+  const s = normalizeStore({
+    groups: [{ id: 'G', name: '甲' }, { id: 'G', name: '乙' }],
+    lists: [{ id: 'L', gid: 'G', name: '甲清单' }, { id: 'L', gid: 'G', name: '乙清单' }],
+    todos: [
+      { id: 'X', title: '第一条' },
+      { id: 'X', title: '第二条' }
+    ]
+  })
+  // 两条都在,且 id 已互不相同
+  assert.equal(s.todos.length, 2)
+  assert.notEqual(s.todos[0]!.id, s.todos[1]!.id)
+  assert.deepEqual(s.todos.map((t) => t.title).sort(), ['第一条', '第二条'])
+  assert.equal(s.groups.length, 2)
+  assert.notEqual(s.groups[0]!.id, s.groups[1]!.id)
+  assert.equal(s.lists.length, 2)
+  assert.notEqual(s.lists[0]!.id, s.lists[1]!.id)
+})
+
+test('updateTodo 忽略 patch 里的 undefined,不把已排期改成未排期', () => {
+  const s0 = emptyStore()
+  const s1 = addTodo(s0, { title: '甲', date: '2026-10-08' })
+  const id = s1.todos[0]!.id
+  const s2 = updateTodo(s1, id, { note: '备注', date: undefined } as Partial<TodoItem>)
+  assert.equal(s2.todos[0]!.date, '2026-10-08')
+  assert.equal(s2.todos[0]!.note, '备注')
+})
+
+test('setStatus 改为已完成与点勾同路径:重复任务会生成下一期', () => {
+  const s0 = addTodo(emptyStore(), { title: '每月', date: '2026-01-31', repeat: { kind: 'monthly' } })
+  const id = s0.todos[0]!.id
+  const viaClick = completeTodo(s0, id)
+  const viaDialog = setStatus(s0, id, DONE)
+  assert.equal(viaDialog.todos.length, viaClick.todos.length)
+  assert.equal(viaDialog.todos[0]!.status, DONE)
+  assert.equal(viaDialog.todos[1]!.status, ACTIVE)
+  assert.equal(viaDialog.todos[1]!.date, '2026-02-28')
+})
+
+test('每月重复记住原始日号:1-31 → 2-28 → 3-31,不是永远停在 28', () => {
+  assert.equal(nextByRepeat('2026-01-31', 'monthly', 31), '2026-02-28')
+  assert.equal(nextByRepeat('2026-02-28', 'monthly', 31), '2026-03-31')
+  assert.equal(nextByRepeat('2024-03-31', 'monthly', 31), '2024-04-30')
+  // 不传锚点时行为与旧版逐字相同
+  assert.equal(nextByRepeat('2026-01-31', 'monthly'), '2026-02-28')
+  assert.equal(nextByRepeat('2026-02-28', 'monthly'), '2026-03-28')
+
+  const s0 = addTodo(emptyStore(), { title: '月末', date: '2026-01-31', repeat: { kind: 'monthly' } })
+  const s1 = completeTodo(s0, s0.todos[0]!.id)
+  const feb = s1.todos[1]!
+  assert.equal(feb.date, '2026-02-28')
+  assert.equal(feb.repeat.anchorDay, 31, '首次完成就该记下原始日号')
+  const s2 = completeTodo(s1, feb.id)
+  const mar = s2.todos[2]!
+  assert.equal(mar.date, '2026-03-31')
+  assert.equal(mar.repeat.anchorDay, 31)
+})
+
+test('视图名「未排期」与收集箱回退名是两个口径,不能混用', () => {
+  assert.equal(VIEW_NAME['inbox'], '未排期')
+  assert.equal(INBOX_NAME, '收集箱')
+})
+
+test('hitsFor 未知视图返回副本,调用方 sort 不会改坏共享索引', () => {
+  const idx = buildIndex(
+    {
+      version: 2,
+      groups: [],
+      lists: [],
+      todos: [todo({ id: 'a', prio: 3, seq: 2 }), todo({ id: 'b', prio: 1, seq: 1 })]
+    },
+    ''
+  )
+  const before = idx.hits.map((t) => t.id)
+  const got = hitsFor(idx, 'bogus' as ViewKey)
+  assert.notEqual(got, idx.hits, '必须是新数组')
+  got.sort((a, b) => a.id.localeCompare(b.id))
+  assert.deepEqual(idx.hits.map((t) => t.id), before)
+})
+
+test('每月重复的 anchorDay 能穿过「落盘 → 读回」往返', () => {
+  const s0 = addTodo(emptyStore(), { title: '月末', date: '2026-01-31', repeat: { kind: 'monthly' } })
+  const s1 = completeTodo(s0, s0.todos[0]!.id)
+  const febId = s1.todos[1]!.id
+
+  // 走一遍真实的读写链路:JSON 序列化 → normalizeStore 读回
+  const reloaded = normalizeStore(JSON.parse(JSON.stringify(s1)))
+  assert.equal(reloaded.todos[1]!.repeat.anchorDay, 31, '读回后仍记住 31 号')
+  // 读回后继续完成,应回到 3-31 而不是 3-28
+  const s3 = completeTodo(reloaded, febId)
+  assert.equal(s3.todos[2]!.date, '2026-03-31')
+})
+
+test('分组与清单的新建:order 接在现有最大值之后', () => {
+  let s = emptyStore()
+  const g1 = addGroup(s, '工作')
+  const g2 = addGroup(g1, '生活')
+  assert.deepEqual(g2.groups.map((g) => g.order), [1, 2], '空库起建时 order 从 1 递增')
+  assert.deepEqual(g2.groups.map((g) => g.name), ['工作', '生活'])
+
+  const gid = g2.groups[1]!.id
+  const withLists = addList(addList(g2, gid, '杂事', '#3A7AFE'), gid, '健康', '#F2A33C')
+  assert.deepEqual(
+    withLists.lists.filter((l) => l.gid === gid).map((l) => l.order),
+    [1, 2],
+    '同组内 order 连续'
+  )
+  // 空白名不建条目
+  assert.deepEqual(addGroup(g2, '   '), g2, '空白分组名不建')
+  assert.deepEqual(addList(g2, gid, '  ', '#3A7AFE'), g2, '空白清单名不建')
+})
+
+test('removeList 两种语义:任务移到收集箱 / 连任务一起删', () => {
+  const base: Store = {
+    ...emptyStore(),
+    groups: [{ id: 'g1', name: '工作', order: 1 }],
+    lists: [{ id: 'l1', gid: 'g1', name: '甲', color: '#3A7AFE', order: 1 }],
+    todos: [
+      todo({ id: 'a', lid: 'l1', seq: 1 }),
+      todo({ id: 'b', lid: 'l1', seq: 2 }),
+      todo({ id: 'c', lid: '', seq: 3 })
+    ]
+  }
+
+  const moved = removeList(base, 'l1', false)
+  assert.deepEqual(moved.removedTodos, 2, '统计被影响的任务数')
+  assert.deepEqual(moved.store.lists.length, 0, '清单消失')
+  assert.deepEqual(moved.store.todos.length, 3, '任务一条都不少')
+  assert.deepEqual(moved.store.todos.map((t) => t.id), ['a', 'b', 'c'], '原顺序不变')
+  assert.deepEqual(moved.store.todos.map((t) => t.lid), ['', '', ''], '全部改挂收集箱')
+
+  const dropped = removeList(base, 'l1', true)
+  assert.deepEqual(dropped.removedTodos, 2)
+  assert.deepEqual(dropped.store.todos.map((t) => t.id), ['c'], '只留不在该清单的任务')
+})
+
+test('removeGroup 连带删除组内清单,任务移到收集箱且不留悬空 gid', () => {
+  const base: Store = {
+    ...emptyStore(),
+    groups: [
+      { id: 'g1', name: '工作', order: 1 },
+      { id: 'g2', name: '生活', order: 2 }
+    ],
+    lists: [
+      { id: 'l1', gid: 'g1', name: '甲', color: '#3A7AFE', order: 1 },
+      { id: 'l2', gid: 'g1', name: '乙', color: '#F2A33C', order: 2 },
+      { id: 'l3', gid: 'g2', name: '丙', color: '#3C9954', order: 1 }
+    ],
+    todos: [
+      todo({ id: 'a', lid: 'l1', seq: 1 }),
+      todo({ id: 'b', lid: 'l2', seq: 2 }),
+      todo({ id: 'c', lid: 'l3', seq: 3 })
+    ]
+  }
+  const r = removeGroup(base, 'g1')
+  assert.deepEqual(r.removedLists, 2, '组内清单数')
+  assert.deepEqual(r.movedTodos, 2, '被移到收集箱的任务数')
+  assert.deepEqual(r.store.groups.map((g) => g.id), ['g2'], '分组消失')
+  assert.deepEqual(r.store.lists.map((l) => l.id), ['l3'], '其他组的清单不动')
+  // 悬空 gid 会让整行清单在侧栏不渲染、其任务无计数行,必须没有
+  assert.ok(r.store.lists.every((l) => l.gid !== 'g1'), '不得残留指向已删分组的清单')
+  assert.deepEqual(r.store.todos.map((t) => t.lid), ['', '', 'l3'], '组内任务改挂收集箱,其他组不动')
+
+  const miss = removeGroup(base, 'nope')
+  assert.deepEqual(miss.store, base, '找不到分组时原样返回')
+  assert.deepEqual(miss.removedLists, 0)
+})
+
+test('moveGroup / moveList 重排后 order 恰为 1..n', () => {
+  const base: Store = {
+    ...emptyStore(),
+    groups: [
+      { id: 'g1', name: '工作', order: 1 },
+      { id: 'g2', name: '生活', order: 2 },
+      { id: 'g3', name: '其他', order: 3 }
+    ],
+    lists: [
+      { id: 'l1', gid: 'g1', name: '甲', color: '#3A7AFE', order: 1 },
+      { id: 'l2', gid: 'g1', name: '乙', color: '#F2A33C', order: 2 },
+      { id: 'l3', gid: 'g2', name: '丙', color: '#3C9954', order: 1 }
+    ],
+    todos: []
+  }
+  // 把最后一个拖到最前(moveGroup 只改 order,数组序不动 —— 渲染时才按 order 排)
+  const moved = moveGroup(base, 'g3', 0)
+  assert.deepEqual([...moved.groups].sort((a, b) => a.order - b.order).map((g) => g.id), ['g3', 'g1', 'g2'], '按 order 排序后的顺序符合插入位')
+  assert.deepEqual(moved.groups.map((g) => g.order).sort((a, b) => a - b), [1, 2, 3], 'order 连续无空洞')
+  assert.equal(base.groups.map((g) => g.id).join(), 'g1,g2,g3', '不改原对象')
+
+  // 同组内把第 2 个拖到第 1 位
+  const l = moveList(base, 'l2', 'g1', 0)
+  assert.deepEqual(l.lists.filter((x) => x.gid === 'g1').sort((a, b) => a.order - b.order).map((x) => x.id), ['l2', 'l1'])
+  assert.deepEqual(l.lists.filter((x) => x.gid === 'g1').map((x) => x.order).sort((a, b) => a - b), [1, 2])
+})
+
+test('moveList 跨组后新旧两组的 order 都连续,不留空洞', () => {
+  const base: Store = {
+    ...emptyStore(),
+    groups: [
+      { id: 'g1', name: '工作', order: 1 },
+      { id: 'g2', name: '生活', order: 2 }
+    ],
+    lists: [
+      { id: 'a1', gid: 'g1', name: '甲一', color: '#3A7AFE', order: 1 },
+      { id: 'a2', gid: 'g1', name: '甲二', color: '#7C5CFF', order: 2 },
+      { id: 'a3', gid: 'g1', name: '甲三', color: '#F2A33C', order: 3 },
+      { id: 'b1', gid: 'g2', name: '乙一', color: '#3C9954', order: 1 }
+    ],
+    todos: []
+  }
+  // 把 g1 的第一个拖到 g2 末尾
+  const moved = moveList(base, 'a1', 'g2', 99)
+  assert.deepEqual(moved.lists.find((l) => l.id === 'a1')!.gid, 'g2', '换组生效')
+  assert.deepEqual(
+    moved.lists.filter((l) => l.gid === 'g1').sort((a, b) => a.order - b.order).map((l) => l.id),
+    ['a2', 'a3'],
+    '原组剩下两个且顺序正确'
+  )
+  assert.deepEqual(
+    moved.lists.filter((l) => l.gid === 'g1').map((l) => l.order).sort((a, b) => a - b),
+    [1, 2],
+    '原组 order 重排为 1..n,不留空洞'
+  )
+  assert.deepEqual(
+    moved.lists.filter((l) => l.gid === 'g2').sort((a, b) => a.order - b.order).map((l) => l.id),
+    ['b1', 'a1'],
+    '目标组内顺序'
+  )
+  assert.ok(
+    moved.lists.filter((l) => l.gid === 'g2').every((l) => l.order >= 1 && l.order <= 2),
+    '目标组 order 也连续'
+  )
+  // 找不到 / 不存在的目标组都不得崩
+  assert.equal(moveList(base, 'nope', 'g1', 0), base, '找不到清单时原样返回')
+  assert.equal(moveList(base, 'a1', 'nope', 0).lists.find((l) => l.id === 'a1')!.gid, 'g1', '无效 gid 回退原组')
 })

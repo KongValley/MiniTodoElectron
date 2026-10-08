@@ -113,12 +113,14 @@ export function useVirtual<T>(options: UseVirtualOptions<T>): UseVirtual<T> {
     })
   }
 
+  // 只剔除已经不存在的 key:增删一张卡就把整列已测高度换成估算值,会跳一帧
   function reset(): void {
-    heights.clear()
+    const alive = new Set(items().map(keyOf))
+    for (const k of [...heights.keys()]) if (!alive.has(k)) heights.delete(k)
     version.value++
   }
 
-  // 列表整体换内容(视图/搜索变化)时丢弃高度缓存,避免旧 key 残留
+  // 项数变化(增删/换内容)时重算前缀和
   watch(
     () => items().length,
     () => reset()

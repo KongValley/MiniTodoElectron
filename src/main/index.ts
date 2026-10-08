@@ -1,10 +1,17 @@
 import { app, BrowserWindow, Menu, Notification, protocol } from 'electron'
 import { existsSync } from 'node:fs'
-import { join, normalize } from 'node:path'
+import { join, normalize, sep } from 'node:path'
 import { CH } from '@shared/api'
 import { countDue } from '@shared/query'
 import type { Store } from '@shared/types'
-import { registerIpc, getCurrentStore, menuExport, menuImport } from './ipc'
+import {
+  registerIpc,
+  getCurrentStore,
+  getSaveFailures,
+  setCurrentStore,
+  menuExport,
+  menuImport
+} from './ipc'
 import { buildMenu } from './menu'
 import { applyDataDirOverride, dataDir, storePath } from './lib/paths'
 import { loadStore, saveStore } from './lib/store'
@@ -65,11 +72,23 @@ protocol.registerSchemesAsPrivileged([
 function registerAppProtocol(): void {
   const rendererRoot = normalize(join(app.getAppPath(), 'out/renderer'))
   protocol.registerFileProtocol('app', (request, callback) => {
-    const url = new URL(request.url)
-    const filePath = normalize(join(rendererRoot, decodeURIComponent(url.pathname)))
-    // 路径穿越防护:越界时返回不存在的路径(Chromium 按 404 处理)
-    const safePath = filePath.startsWith(rendererRoot) ? filePath : join(rendererRoot, '__forbidden__')
-    callback({ path: safePath })
+    // 异常路径下漏调 callback 会让请求永久悬挂;闩保证恰好调用一次
+    let done = false
+    const reply = (arg: { path: string } | { error: number }): void => {
+      if (done) return
+      done = true
+      callback(arg)
+    }
+    try {
+      const url = new URL(request.url)
+      const filePath = normalize(join(rendererRoot, decodeURIComponent(url.pathname)))
+      // 路径穿越防护:按路径边界比较(前缀相同但越界,如同级目录名),越界返回不存在的路径
+      const ok = filePath === rendererRoot || filePath.startsWith(rendererRoot + sep)
+      reply({ path: ok ? filePath : join(rendererRoot, '__forbidden__') })
+    } catch (err) {
+      console.error('[app-protocol] 请求处理失败:', err)
+      reply({ error: -6 }) // ERR_FILE_NOT_FOUND,交给 Chromium 按 404 处理
+    }
   })
 }
 
@@ -153,7 +172,8 @@ function createWindow(): void {
     }
   })
 
-  if (process.env['ELECTRON_RENDERER_URL']) {
+  // 只在开发态认这个变量:打包版若被环境变量劫持到远程 origin,会把完整 todoAPI 交给它
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     void mainWindow.loadURL('app://./index.html')
@@ -193,7 +213,10 @@ function mainChecks(): Record<string, unknown> {
       hasLock: app.hasSingleInstanceLock(),
       hiddenBefore,
       visibleAfter: win.isVisible(),
-      minimizedAfter: win.isMinimized()
+      minimizedAfter: win.isMinimized(),
+      // showWindow 借一次临时置顶打断 Windows 的前台锁定,这里断言它已交还 ——
+//      忘了交还就会让窗口永久置顶,比其他窗口都靠前
+      alwaysOnTopAfter: win.isAlwaysOnTop()
     }
   }
 
@@ -206,6 +229,8 @@ function mainChecks(): Record<string, unknown> {
     // 渲染进程崩溃自愈:recovered 在「崩过之后又加载成功」时置位(粘住,便于主进程侧断言)
     rendererRecovered,
     windowAlive: !!win && !win.isDestroyed(),
+    // 保存失败注入是否真的让落盘抛了错(渲染层标记之外的第二道证据)
+    saveFailures: getSaveFailures(),
     closeProbe,
     singleInstance,
     notify: notify
@@ -231,15 +256,28 @@ if (gotSingleInstanceLock) {
 
     const win = mainWindow as BrowserWindow
     const loaded = await loadStore()
+    // 渲染层首次 store:load 到达前的空窗期里,菜单导出/托盘也不能看到空数据
+    setCurrentStore(loaded.store)
     loadSettings()
-    // 首次运行(无数据文件)写入示例数据,用户可直接改/清空该文件
-    if (!existsSync(storePath())) await saveStore(loaded.store)
+    // 首次运行(无数据文件)写入示例数据,用户可直接改/清空该文件。
+    // 写失败必须兜住:这里抛出会中断整个 whenReady 链 —— 窗口永远空白、进程不退出,
+    // 用户看到的既不是应用也不是任何提示。
+    let seedFailed = ''
+    if (!existsSync(storePath())) {
+      try {
+        await saveStore(loaded.store)
+      } catch (err) {
+        seedFailed = `示例数据写入失败：${err instanceof Error ? err.message : String(err)}。数据目录不可写，改动不会被保存。`
+        console.error('[startup] 示例数据写入失败:', err)
+      }
+    }
     // 托盘在冒烟模式下也创建(step16 要断言),通知轮询只在正式运行启动
     createTray(win)
 
     win.webContents.once('did-finish-load', () => {
       setTodayCount(win, countDue(loaded.store))
       if (loaded.warning) win.webContents.send(CH.uiOpenDialog, 'warning', loaded.warning)
+      else if (seedFailed) win.webContents.send(CH.uiOpenDialog, 'warning', seedFailed)
     })
 
     if (isSmokeMode()) {

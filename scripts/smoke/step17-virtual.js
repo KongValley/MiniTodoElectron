@@ -86,6 +86,40 @@ if (firstCol && firstCol.scrollHeight > firstCol.clientHeight) {
   scrollKept = back ? Math.abs(back.scrollTop - 40) <= 2 : null
 }
 
+// 看板长列滚到底:末尾不留大片空白(7a)
+// 背景:虚拟行包装 div 无样式时,卡片/组标题的外边距会折叠逃出盒子,测得高度恒少 8~14px。
+// 误差随行数累积,只有足够长的列才看得出来 —— 这里专门造一条 120 张的列。
+const longDate = day(0)
+for (let i = 0; i < 120; i++) {
+  await t.newTask({ title: `长列 ${pad(i)}`, date: longDate, prio: 2 })
+}
+await t.flush()
+await sleep(300)
+
+const longSc = document.querySelector(`[data-column="${longDate}"] .content`)
+truthy(longSc, '长列存在')
+truthy(longSc.scrollHeight > longSc.clientHeight * 3, `长列应远超一屏(实际 ${longSc.scrollHeight}/${longSc.clientHeight})`)
+longSc.scrollTop = Math.round(longSc.scrollHeight / 2)
+longSc.dispatchEvent(new Event('scroll', { bubbles: true }))
+await sleep(500)
+
+// 滚到底:最后一条任务必须能看到,且末尾不留大片空白
+longSc.scrollTop = longSc.scrollHeight
+longSc.dispatchEvent(new Event('scroll', { bubbles: true }))
+await sleep(500)
+const modelLong = t.buckets(longDate).find((x) => x.prio === 2).ids
+truthy(
+  document.querySelector(`[data-column="${longDate}"] [data-card="${modelLong[modelLong.length - 1]}"]`),
+  `滚到底后应看到长列的最后一条(共 ${modelLong.length} 条)`
+)
+const longCards = [...longSc.querySelectorAll('[data-card]')]
+const longLast = longCards[longCards.length - 1]
+truthy(longLast, '长列滚到底后应有已渲染卡片')
+const tailGap = longSc.getBoundingClientRect().bottom - longLast.getBoundingClientRect().bottom
+assert(tailGap < 20, `列末空白应小于 20px(实际 ${tailGap.toFixed(1)}px)`)
+longSc.scrollTop = 0
+await sleep(200)
+
 return {
   modelRows,
   domRowsAtTop,
@@ -93,5 +127,7 @@ return {
   modelCards,
   domCols,
   totalCols: cols.length,
-  scrollKept
+  scrollKept,
+  longCount: modelLong.length,
+  tailGap: Math.round(tailGap * 10) / 10
 }

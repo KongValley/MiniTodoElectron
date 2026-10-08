@@ -6,15 +6,23 @@ import { isDate, label } from '@shared/dates'
 import { bucketsOf, columnsForView, sortedByIndex } from '@shared/query'
 import { index } from './store/index'
 import {
+  addGroup,
+  addList,
   addSubtask,
   addTodo,
   completeTodo,
   mergeStore,
   moveCard,
+  moveGroup,
+  moveList,
   normalizeStore,
+  removeGroup,
+  removeList,
   removeTodos,
+  renameGroup,
   setStatus,
   toggleSubtask,
+  updateList,
   updateTodo
 } from '@shared/store-ops'
 import type { Store, TodoItem, ViewKey } from '@shared/types'
@@ -42,6 +50,17 @@ export interface TodoTestAPI {
   moveCardToDate: (id: string, date: string, index: number) => Promise<void>
   addSubtask: (id: string, title: string) => Promise<void>
   toggleSubtask: (id: string, subId: string) => Promise<void>
+
+  addGroup: (name: string) => Promise<void>
+  addList: (gid: string, name: string, color: string) => Promise<void>
+  renameGroup: (id: string, name: string) => Promise<void>
+  renameList: (id: string, name: string) => Promise<void>
+  removeGroup: (id: string) => Promise<void>
+  removeList: (id: string, dropTodos: boolean) => Promise<void>
+  moveGroup: (id: string, index: number) => Promise<void>
+  moveList: (id: string, gid: string, index: number) => Promise<void>
+  groups: () => { id: string; name: string; order: number }[]
+  lists: () => { id: string; gid: string; name: string; color: string; order: number }[]
 
   importJson: (text: string) => Promise<{ groups: number; lists: number; todos: number }>
   importMerge: (
@@ -109,6 +128,18 @@ export function installTestApi(): void {
     moveCardToDate: (id, date, index) => mutate((s) => moveCard(s, id, date, index)),
     addSubtask: (id, title) => mutate((s) => addSubtask(s, id, title)),
     toggleSubtask: (id, subId) => mutate((s) => toggleSubtask(s, id, subId)),
+
+    addGroup: (name) => mutate((s) => addGroup(s, name)),
+    addList: (gid, name, color) => mutate((s) => addList(s, gid, name, color)),
+    renameGroup: (id, name) => mutate((s) => renameGroup(s, id, name)),
+    renameList: (id, name) => mutate((s) => updateList(s, id, { name })),
+    removeGroup: (id) => mutate((s) => removeGroup(s, id).store),
+    removeList: (id, dropTodos) => mutate((s) => removeList(s, id, dropTodos).store),
+    moveGroup: (id, index) => mutate((s) => moveGroup(s, id, index)),
+    moveList: (id, gid, index) => mutate((s) => moveList(s, id, gid, index)),
+    groups: () => state.store.groups.map((g) => ({ id: g.id, name: g.name, order: g.order })),
+    lists: () =>
+      state.store.lists.map((l) => ({ id: l.id, gid: l.gid, name: l.name, color: l.color, order: l.order })),
 
     importJson: async (text) => {
       const parsed = normalizeStore(JSON.parse(text))

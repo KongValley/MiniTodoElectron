@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { addDays, today } from '@shared/dates'
 import { completeTodo, moveCard, removeTodos, setStatus, updateTodo } from '@shared/store-ops'
 import { ACTIVE, PRIO_COLOR, PRIO_NAME, type Prio } from '@shared/types'
 import { mutate, state } from '../store/data'
-import { askConfirm, closeCardMenu, toast, ui } from '../store/ui'
+import { askConfirm, closeCardMenu, requestEdit, toast, ui } from '../store/ui'
 import Icon from './Icon.vue'
 
 const m = computed(() => ui.cardMenu as { id: string; x: number; y: number })
@@ -55,8 +55,7 @@ function remove(): void {
 }
 
 function edit(): void {
-  const id = m.value.id
-  ui.dialog = { mode: 'edit', id }
+  requestEdit(m.value.id)
   closeCardMenu()
 }
 
@@ -72,6 +71,11 @@ const actions = computed<Action[]>(() => {
     { label: done ? '取消完成' : '完成', icon: 'check', run: complete },
     { label: '删除', icon: 'trash', danger: true, run: remove }
   ]
+})
+
+// 卡片被键盘删掉后 ui.cardMenu 仍非 null,App 的 v-if 会一直挂着这个空壳菜单
+watch(item, (v) => {
+  if (!v) closeCardMenu()
 })
 </script>
 

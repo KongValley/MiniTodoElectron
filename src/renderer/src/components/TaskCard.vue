@@ -4,7 +4,7 @@ import { computed, ref } from 'vue'
 import { completeTodo, toggleSubtask } from '@shared/store-ops'
 import { PRIO_COLOR, PRIO_NAME, type TodoItem } from '@shared/types'
 import { mutate } from '../store/data'
-import { openCardMenu, ui } from '../store/ui'
+import { openCardMenu, requestEdit, ui } from '../store/ui'
 import { segments } from '../lib/search'
 import Icon from './Icon.vue'
 
@@ -35,7 +35,7 @@ function onComplete(event: MouseEvent): void {
 }
 
 function onOpen(): void {
-  ui.dialog = { mode: 'edit', id: props.item.id }
+  requestEdit(props.item.id)
 }
 
 function onCtx(event: MouseEvent): void {

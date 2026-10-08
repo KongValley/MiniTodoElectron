@@ -10,7 +10,15 @@ import { emptyStore } from '@shared/store-ops'
 import { countDue } from '@shared/query'
 import type { Store } from '@shared/types'
 import { dataDir, oldStorePath } from './lib/paths'
-import { backupIfDue, exportToFile, importFromFile, loadStore, saveStore } from './lib/store'
+import {
+  backupIfDue,
+  consumeLoadWarning,
+  exportToFile,
+  importFromFile,
+  loadStore,
+  saveStore,
+  setSaveFail
+} from './lib/store'
 import { loadSettings, saveSettings, type Settings } from './lib/settings'
 import { setTodayCount } from './lib/tray'
 
@@ -21,6 +29,18 @@ let currentStore: Store | null = null
 
 export function getCurrentStore(): Store | null {
   return currentStore
+}
+
+/** 启动流程在 loadStore 之后立刻同步快照,避免渲染层首次 store:load 前的空窗期 */
+export function setCurrentStore(s: Store | null): void {
+  currentStore = s
+}
+
+/** 保存失败次数;渲染层观测不到主进程错误,这个计数供 mainChecks 断言 */
+let saveFailures = 0
+
+export function getSaveFailures(): number {
+  return saveFailures
 }
 
 /** 统一兜底:文件系统异常不应让 IPC 静默 reject */
@@ -41,18 +61,21 @@ function stampName(): string {
 
 /** 主进程侧的导入流程(菜单与 IPC 共用):选文件 → 归一化 → 让渲染层确认后落盘 */
 async function pickAndReadStore(win: BrowserWindow, preset?: string) {
-  const options = {
-    title: '导入数据',
-    defaultPath: preset && existsSync(preset) ? preset : undefined,
-    filters: [
-      { name: 'JSON 数据', extensions: ['json'] },
-      { name: '全部文件', extensions: ['*'] }
-    ],
-    properties: ['openFile' as const]
+  // 菜单入口要的是零点击:preset 存在就直接读,不存在必须立刻说清楚原因,
+  // 否则 readFileSync 的 ENOENT 会被当成「文件无法解析为待办数据」
+  if (preset && !existsSync(preset)) {
+    throw new Error(`未找到旧版数据文件：${preset}。若已安装过旧版，请确认路径后再试`)
   }
   const picked = preset
     ? { canceled: false, filePaths: [preset] }
-    : await dialog.showOpenDialog(win, options)
+    : await dialog.showOpenDialog(win, {
+        title: '导入数据',
+        filters: [
+          { name: 'JSON 数据', extensions: ['json'] },
+          { name: '全部文件', extensions: ['*'] }
+        ],
+        properties: ['openFile' as const]
+      })
   if (picked.canceled || picked.filePaths.length === 0) return { canceled: true as const }
   const file = picked.filePaths[0] as string
   const result = await importFromFile(file)
@@ -69,13 +92,17 @@ function assertStoreShape(v: unknown): asserts v is Store {
 }
 
 export function registerIpc(getWindow: () => BrowserWindow | null): void {
+  // 冒烟注入:让保存真的失败,验证「保存失败」提示与状态栏标记会送达用户(见 step28)
+  if (process.env['TODO_SMOKE_SAVE_FAIL'] === '1') setSaveFail(true)
+
   ipcMain.handle(CH.storeLoad, () =>
     guard(async () => {
       const { store, warning } = await loadStore()
       currentStore = store
       const win = getWindow()
       if (win) setTodayCount(win, countDue(store))
-      return { ok: true, store, path: join(dataDir(), 'todos.json'), warning }
+      // 主进程启动那次 loadStore 已消费掉损坏文件;渲染层这次的 load 是第二次,取缓存告警
+      return { ok: true, store, path: join(dataDir(), 'todos.json'), warning: warning || consumeLoadWarning() }
     })
   )
 
@@ -87,10 +114,20 @@ export function registerIpc(getWindow: () => BrowserWindow | null): void {
       // 5000 条时逐条归一化要 ~115ms。真正不可信的数据(导入文件)走 store:import,那里仍全量归一化。
       assertStoreShape(raw)
       const store: Store = raw
-      await saveStore(store)
+      try {
+        await saveStore(store)
+      } catch (err) {
+        saveFailures += 1
+        throw err
+      }
       currentStore = store
-      const win = getWindow()
-      if (win) setTodayCount(win, countDue(store))
+      // 托盘计数是副作用:countDue 遇畸形元素会抛,不能因此把已成功的保存报成失败
+      try {
+        const win = getWindow()
+        if (win) setTodayCount(win, countDue(store))
+      } catch (err) {
+        console.error('[ipc] 托盘计数更新失败(数据已保存):', err)
+      }
       // 刻意不回传 store:渲染层已有同一份数据,回传会让每次保存多克隆 ~1MB
       return { ok: true }
     })
@@ -189,7 +226,10 @@ export async function menuExport(win: BrowserWindow, store?: Store | null): Prom
       filters: [{ name: 'JSON 数据', extensions: ['json'] }]
     })
     if (canceled || !filePath) return
-    await exportToFile(filePath, store ?? currentStore ?? emptyStore())
+    // 绝不拿空数据导出:那会产出一个 0 任务的合法 JSON,并弹「已导出」——用户以为备份成功了
+    const data = store ?? currentStore
+    if (!data) throw new Error('数据尚未加载完成，请稍后重试')
+    await exportToFile(filePath, data)
     win.webContents.send(CH.uiOpenDialog, 'exported', filePath)
   } catch (err) {
     console.error('[menu] 导出失败:', err)

@@ -24,6 +24,11 @@ export interface Subtask {
 
 export interface RepeatRule {
   kind: RepeatKind
+  /**
+   * monthly 专用:用户当初选的日号(1-31)。没有它 1-31 → 2-28 → 3-28 会永远停在 28,
+   * 记住它才能回到 3-31。其他 kind 不需要。
+   */
+  anchorDay?: number
 }
 
 export interface TodoGroup {
@@ -87,7 +92,8 @@ export const VIEW_NAME: Record<string, string> = {
   today: '今天',
   tmr: '明天',
   week7: '最近7天',
-  inbox: '收集箱',
+  // 该视图筛的是 date === ''(未排期),不是「没有清单的任务」—— 那是 INBOX_NAME 的口径
+  inbox: '未排期',
   done: '已完成',
   dropped: '已放弃',
   trash: '回收站'
@@ -103,3 +109,6 @@ export const REPEAT_NAME: Record<RepeatKind, string> = {
 
 export const INBOX_NAME = '收集箱'
 export const INBOX_COLOR = '#9AA0A8'
+
+/** 可选清单配色;新建清单时取同组尚未占用的第一个 */
+export const LIST_COLORS = ['#3A7AFE', '#7C5CFF', '#F2A33C', '#3C9954', '#12A5B8', '#E8705F', '#8A8F98'] as const

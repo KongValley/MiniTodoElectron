@@ -139,9 +139,9 @@ jobs:
           pattern: pkg-*
           path: release
 
-      # 摊平成单个资产目录。只收 mini-todo-*.exe(package-win.mjs 的命名约定),
-      # 不要用 '*.exe' —— electron-builder 会在打包目录里留下 elevate.exe 这类
-      # 助手程序,一并发布会让用户困惑。
+      # 摊平成单个资产目录。只收 mini-todo-*.exe / mini-todo-*.zip(package-win.mjs
+      # 的命名约定),不要用 '*.exe' —— electron-builder 会在打包目录里留下
+      # elevate.exe 这类助手程序,一并发布会让用户困惑。同理不收通配 '*.zip'。
       # .msu 只存在于「前置补丁」子目录;两个 Win7 架构各有同名《安装说明.txt》,只取一份。
       #
       # 资产名必须是 ASCII:实测 gh release create 会把非 ASCII 文件名压成
@@ -152,14 +152,15 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           find release -name 'mini-todo-*.exe' -exec cp {} dist/ \;
+          find release -name 'mini-todo-*.zip' -exec cp {} dist/ \;
           find release -name '*.msu'            -exec cp {} dist/ \;
           find release -name '安装说明.txt' | sort | head -1 | xargs -r -I{} cp {} dist/win7-patches-readme.txt
           echo "--- 资产清单 ---"
           ls -lh dist
-          # 8 个 exe(4 架构 x 安装版/便携版)+ 8 个 msu(两个 Win7 架构各 4 个)
+          # 4 个安装版 exe + 4 个绿色版 zip + 8 个 msu(两个 Win7 架构各 4 个)
           # + 1 份说明(两个 Win7 架构同名,只取一份)= 17
           N=$(ls dist | wc -l)
-          [ "$N" -eq 17 ] || { echo "::error::预期 17 个资产(8 exe + 8 msu + 1 说明),实际 $N"; exit 1; }
+          [ "$N" -eq 17 ] || { echo "::error::预期 17 个资产(4 exe + 4 zip + 8 msu + 1 说明),实际 $N"; exit 1; }
           if ls dist | grep -qP '[^\x20-\x7e]'; then
             echo "::error::存在非 ASCII 资产名,上传后会被 gh 压成 default.txt"
             ls dist
@@ -185,7 +186,7 @@ jobs:
           fi
           gh release create "$TAG" dist/* \
             --title "迷你待办 ${VERSION}" \
-            --notes "四架构安装版 + 便携版。共 17 个资产 = 8 个 exe(4 架构 × 安装版/便携版)+ 8 个 .msu(两个 Win7 架构各 4 个)+ 1 份说明。**Win7 用户**:先下载 win7-patches-readme.txt 看补丁安装顺序,按里面的顺序装完 4 个 .msu(先 KB4490628 再 KB4474419),再运行安装包或便携版。Win10 及以上不需要补补丁,直接跑 exe。" \
+            --notes "四架构安装版 + 绿色版。共 17 个资产 = 4 个安装版 exe + 4 个绿色版 zip + 8 个 .msu(两个 Win7 架构各 4 个)+ 1 份说明。**两种分发物**:安装版双击 exe 走安装向导;绿色版是 zip,解压到任意文件夹后双击里面的 exe 即可,不必安装(zip 无外层目录,建议先建一个专用文件夹再解压)。**Win7 用户**:先下载 win7-patches-readme.txt 看补丁安装顺序,按里面的顺序装完 4 个 .msu(先 KB4490628 再 KB4474419),再运行安装包或绿色版。Win10 及以上不需要补补丁,直接跑 exe。" \
             --latest
           echo "已发布:$TAG"
 

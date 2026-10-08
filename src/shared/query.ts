@@ -80,7 +80,8 @@ export function hitsFor(index: StoreIndex, view: ViewKey): TodoItem[] {
     case 'trash':
       return index.hits.filter((t) => t.status === TRASH)
     default:
-      return index.hits
+      // 必须给副本:其余分支都经 filter 返回新数组,调用方 sort() 会就地改坏共享索引
+      return [...index.hits]
   }
 }
 

@@ -72,10 +72,11 @@ export function label(date: string): string {
 
 /**
  * 按重复规则算下一次日期;不重复或非法日期返回 null。
- * monthly:同月 +1,月末溢出落到目标月最后一天(1-31 → 2-28)。
+ * monthly:同月 +1,目标月没有该日号则落到最后一天;传 anchorDay 时用它当目标日号
+ *         (1-31 → 2-28 → 3-31),不传则按当前日期的日号(旧行为)。
  * weekday:往后找第一个周一~周五。
  */
-export function nextByRepeat(date: string, kind: RepeatKind): string | null {
+export function nextByRepeat(date: string, kind: RepeatKind, anchorDay?: number): string | null {
   const d = parse(date)
   if (!d || kind === 'none') return null
   if (kind === 'daily') return addDays(date, 1)
@@ -87,13 +88,16 @@ export function nextByRepeat(date: string, kind: RepeatKind): string | null {
     const targetM = m > 11 ? 0 : m
     // 目标月最后一天:下个月 0 号
     const lastDay = new Date(targetY, targetM + 1, 0).getDate()
-    const day = Math.min(d.getDate(), lastDay)
+    const day = Math.min(anchorDay ?? d.getDate(), lastDay)
     return fmt(new Date(targetY, targetM, day))
   }
   // weekday
   let next = addDays(date, 1)
   while (true) {
-    const w = (parse(next) as Date).getDay()
+    // 年份溢出会让 fmt 产出 5 位年份,parse 直接返回 null —— 抛错会连带整条 completeTodo 失败
+    const nd = parse(next)
+    if (!nd) return null
+    const w = nd.getDay()
     if (w >= 1 && w <= 5) return next
     next = addDays(next, 1)
   }

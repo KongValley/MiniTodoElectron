@@ -1,6 +1,6 @@
 # 迷你待办 MiniTodo（Electron 版）
 
-看板式待办管理工具，一套代码同时出 32/64 位安装包与便携版，覆盖内网 Win7 老机器与现代 Win10/11。
+看板式待办管理工具，一套代码同时出 32/64 位安装包与绿色版，覆盖内网 Win7 老机器与现代 Win10/11。
 
 这是 [MiniTodo](https://github.com/KongValley/MiniTodo)（C# WinForms / .NET 3.5 单文件版）的 Electron 重写：功能对齐旧版，并加了看板拖拽、深色主题、托盘常驻、到期通知、子任务、重复任务、自动备份与导入导出。
 
@@ -11,6 +11,8 @@
 | 分类 | 内容 |
 | --- | --- |
 | 视图 | 分组 → 清单两级侧栏；看板（**列随视图过滤**，按日期分列，列内按优先级分组）与列表两种视图，`B` 切换 |
+| 侧栏 | 分组与清单可**新建、重命名、删除、拖拽排序**（清单可跨分组拖）。删清单时可选「任务移到收集箱」或「连任务一起删」；删分组则组内清单一并删除、任务统一移到收集箱，全程不丢任务 |
+| 重复 | 不重复 / 每天 / 每周 / 每月 / 工作日；**每月记住原始日号**（选 31 号则 1-31 → 2-28 → 3-31，不会卡在 28 号） |
 | 任务 | 标题、备注、日期（可「不排期」）、清单、优先级（高/中/低）、状态（待办/已完成/已放弃/回收站） |
 | 增强 | **看板拖拽**改期与同优先级桶内排序、**深色/浅色主题**、**托盘常驻 + 到期通知**、**子任务清单**、**重复任务**、**右键菜单**（改期/改优先级/完成/删除）、**列表列排序**、**搜索词高亮**、**自动备份 + 导入导出**（导入可选替换/合并）、**自绘彩色 SVG 图标**（双主题自适应，零图标库依赖） |
 | 数据 | `%APPDATA%\MiniTodoElectron\todos.json`，UTF-8 明文，可直接备份/编辑；每天自动备份到 `backups/`（保留最新 10 份） |
@@ -36,9 +38,9 @@
 
 ## 界面
 
-左侧是视图与清单（分组 → 清单两层，每行右侧显示条数，视图行配彩色图标）；顶栏是视图名、搜索、新建、视图切换、设置、快捷键（四个动作按钮各带图标）；底部状态栏显示数据文件路径、今日待办数与快捷键提示。
+左侧是视图与清单（分组 → 清单两层，每行右侧显示条数，视图行配彩色图标）；「清单」标题右侧有「+ 分组」「+ 清单」两个入口，分组与清单行鼠标移上去会出现重命名与删除图标，两行之间可拖拽调整顺序（清单可拖到别的分组下）。顶栏是视图名、搜索、新建、视图切换、设置、快捷键（四个动作按钮各带图标）；底部状态栏显示数据文件路径、今日待办数与快捷键提示。
 
-窗口用系统原生标题栏。**关闭窗口 = 隐藏到托盘**（托盘常驻），真正退出走「文件 → 退出」或右键托盘图标 →「退出」。
+窗口用系统原生标题栏。**关闭窗口 = 隐藏到托盘**（托盘常驻），真正退出走「文件 → 退出」或右键托盘图标 →「退出」。应用已在后台运行时**再次双击 exe 会把窗口唤到最前**（单实例锁，不会开出第二个实例）。
 
 <table>
 <tr>
@@ -49,7 +51,7 @@
 
 ## 使用
 
-### 安装版 / 便携版
+### 安装版 / 绿色版
 
 `release/` 下按系统与架构分目录（内容相同，仅架构与命名不同；Win7 与 Win10 两套名称的构建都是 Electron 22）：
 
@@ -58,7 +60,16 @@
 | `Win7-32位` / `Win7-64位` | Windows 7 SP1（32 位系统选 32 位包；64 位系统两种均可） |
 | `Win10-32位` / `Win10-64位` | Windows 10 / 11 |
 
-每个目录里含 `mini-todo-setup-<版本>-<平台>.exe`（安装版，可选安装目录、自动建桌面快捷方式）与 `mini-todo-portable-<版本>-<平台>.exe`（便携版，双击直接运行，无需安装）。
+每个目录里有两个分发物，任选其一：
+
+| 文件 | 用法 |
+| --- | --- |
+| `mini-todo-setup-<版本>-<平台>.exe` | **安装版**：双击走安装向导，可选安装目录、自动建桌面快捷方式 |
+| `mini-todo-portable-<版本>-<平台>.zip` | **绿色版**：解压后双击里面的 exe，无需安装。**建议先建一个专用文件夹再解压**（zip 没有外层目录，直接解压会与当前目录已有文件混在一起） |
+
+两种分发物的启动速度相同（都在本机直接运行，不做解压）。绿色版 zip 约 83 MB（64 位）/ 78 MB（32 位），安装版 exe 约 60 MB / 57 MB —— zip 用 Deflate 而非 7z 的 LZMA，压缩比低所以略大，换来的是解压后启动快 12 倍。
+
+**为什么没有「双击即用的便携版 exe」**：那种单文件 exe 每次启动都要把整个应用解压到 `%TEMP%` 再运行，实测十几秒 —— 这是打包器的机制（启动前无条件清空解压目录重新解压），不是程序缺陷，还会往 `%TEMP%` 留下不清理的副本。绿色版 zip 解压一次，此后每次启动都是直接运行。
 
 **Windows 7 前置要求**：需 **Windows 7 SP1**，并补装 `前置补丁/` 里的 4 个 `.msu`（安装顺序见该目录的《安装说明.txt》，先装 KB4490628 再装 KB4474419）。Win10 及以上系统无此要求。
 
@@ -68,8 +79,9 @@
 - 首次运行会写入一套示例数据；清空该文件后重启即回到示例数据
 - 备份：`%APPDATA%\MiniTodoElectron\backups\todos-<时间戳>.json`，每天最多一份，保留最新 10 份
 - 设置：`%APPDATA%\MiniTodoElectron\settings.json`（主题、到期提醒开关与时间）
-- 数据文件损坏时不会静默覆盖：原文件改名保留为 `todos.json.corrupt-<时间戳>`，并提示原因
+- 数据文件损坏时不会静默覆盖：原文件改名保留为 `todos.json.corrupt-<时间戳>`（保留最新 5 份），并提示原因
 - 旧版数据（`%APPDATA%\MiniTodo\todos.json`）通过「文件 → 导入旧版数据…」导入，导入前自动备份当前数据，并可选「替换」或「合并」（合并按 id 跳过重复项，保留现有任务）
+- **写盘失败不会静默**：状态栏持续显示「保存失败，数据未写入磁盘」，直到下一次保存成功——改动仍留在内存里，但不要在提示消失前关窗口
 
 ## 构建
 
@@ -77,8 +89,8 @@
 npm install          # 需要 Node ≥ 18；Electron 二进制走 .npmrc 里的国内镜像
 npm run dev          # 开发模式
 npm run build        # typecheck + 构建到 out/
-npm test             # 共享层纯函数自检（node --test，31 项）
-npm run smoke        # 端到端冒烟（真 Electron 真窗口，27 项，含主进程侧断言与崩溃自愈）
+npm test             # 共享层纯函数自检（node --test，43 项）
+npm run smoke        # 端到端冒烟（真 Electron 真窗口，29 项，含主进程侧断言、崩溃自愈、保存失败注入与侧栏管理）
 npm run icon         # 生成 resources/icon.png
 ```
 
@@ -192,9 +204,9 @@ gh release create win7-patches --title "Win7 前置补丁源" --notes "CI 构建
 | 网页触发 | Actions → release → Run workflow，填版本号（留空取 `package.json`）；`publish=false` 可只验证构建不发布 |
 | 打 tag | `npm version 1.1.0 && git push origin v1.1.0`（tag 与 `package.json` 版本不一致会直接拒绝发布） |
 
-流水线做的事：`npm ci` → 按架构下载对应 `.msu` → `npm run build` → `node scripts/package-win.mjs <架构>` → 汇总成 Release 资产：**8 个 exe**（4 架构 × 安装版/便携版）+ **8 个 `.msu`**（两个 Win7 架构各 4 个）+ **1 份 `win7-patches-readme.txt`**（两个 Win7 架构各有一份中文《安装说明.txt》，只取一份），共 17 个。tag 已存在时会先删旧 Release 再重建，方便重跑。
+流水线做的事：`npm ci` → 按架构下载对应 `.msu` → `npm run build` → `node scripts/package-win.mjs <架构>` → 汇总成 Release 资产：**4 个安装版 exe** + **4 个绿色版 zip** + **8 个 `.msu`**（两个 Win7 架构各 4 个）+ **1 份 `win7-patches-readme.txt`**（两个 Win7 架构各有一份中文《安装说明.txt》，只取一份），共 17 个。tag 已存在时会先删旧 Release 再重建，方便重跑。
 
-汇总只收 `mini-todo-*.exe` 与 `前置补丁/` 下的 `.msu`，electron-builder 留在 `release/` 里的暂存目录（`win-unpacked/`）和助手程序（`elevate.exe`）不会混进资产。**资产名一律 ASCII** —— `gh release create` 会把非 ASCII 文件名压成 `default.txt`（内容完好、名字没了），所以本地分发目录里用中文名，上传前复制成 `win7-patches-readme.txt`；资产数不等于 17、或 `dist/` 里出现非 ASCII 文件名，流水线都会失败。
+汇总只收 `mini-todo-*.exe` / `mini-todo-*.zip` 与 `前置补丁/` 下的 `.msu`，electron-builder 留在 `release/` 里的暂存目录（`win-unpacked/`）和助手程序（`elevate.exe`）不会混进资产。**资产名一律 ASCII** —— `gh release create` 会把非 ASCII 文件名压成 `default.txt`（内容完好、名字没了），所以本地分发目录里用中文名，上传前复制成 `win7-patches-readme.txt`；资产数不等于 17、或 `dist/` 里出现非 ASCII 文件名，流水线都会失败。
 
 补丁取不到时流水线**直接失败**，不会产出一个缺补丁的 Win7 裸包 —— 那种包在 Win7 机器上根本起不来，静默发布比构建失败危险得多。同理，某个架构取到的 `.msu` 不等于 4 个也会失败。
 
@@ -205,7 +217,7 @@ src/shared/types.ts       数据模型与常量（状态/优先级/视图名）
 src/shared/dates.ts       日期工具（今天/加减/周几/标签/下次重复日期），本地时区
 src/shared/store-index.ts 单次扫描索引（视图计数 + 全量看板列 + 搜索命中）—— 性能关键路径
 src/shared/query.ts       排序、分桶、查表与 columnsForView（看板列按视图过滤后的分桶）
-src/shared/store-ops.ts   数据变更纯函数（不可变）+ normalizeStore 唯一信任边界
+src/shared/store-ops.ts   数据变更纯函数（不可变，含分组/清单增删改排序）+ normalizeStore 唯一信任边界
 src/shared/api.ts         preload 契约与 IPC 通道名
 src/shared/store-ops.test.ts  纯函数与索引自检（node --test）
 
@@ -231,7 +243,7 @@ src/renderer/src/lib/search.ts    搜索词命中片段（标题高亮用）
 src/renderer/src/components/Icon.vue      全站 SVG 图标（PART 表=多部件实心彩色，配色走 --ico-* token；STROKE/FILL 表=单色描边，跟随 currentColor）
 src/renderer/src/components/  侧栏 / 顶栏 / 状态栏 / 看板 / 列表 / 右键菜单 / 各弹窗
 src/renderer/src/test-api.ts  冒烟用 window.__todoTest
-scripts/run-smokes.mjs    冒烟运行器（27 步，含主进程侧断言与崩溃注入）
+scripts/run-smokes.mjs    冒烟运行器（28 步，含主进程侧断言、崩溃与保存失败注入）
 scripts/smoke/step*.js    各步断言
 scripts/gen-perf-data.mjs 生成性能基准数据
 scripts/perf-probe.js     性能探针（长任务 + 墙钟）
@@ -243,7 +255,6 @@ scripts/package-win.mjs   单架构打包 + 前置补丁分发
 ## 已知限制
 
 - 单机本地存储，没有同步/多端；换机器要手动拷 `todos.json` 或「导出数据」
-- 不做分组/清单的增删改 UI（与旧版一致），清单结构来自数据文件或导入
 - 看板列宽固定 300 px；卡片标题最多两行
 - 列表行高固定 32 px（虚拟滚动据此窗口化，改成自适应行高需一并换测量式实现）
 - 看板卡片高度可变，虚拟滚动先按估算高度布局、挂载后按实测校正，极快滚动时可能有 1 帧的偏移跳动

@@ -6,7 +6,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
 import { addDays, today } from '@shared/dates'
 import type { ViewKey } from '@shared/types'
 import { reload, mutate, state } from '../store/data'
-import { askConfirm, closeCardMenu, closeDialog, requestNew, toast, ui } from '../store/ui'
+import { askConfirm, closeCardMenu, closeDialog, closeMeta, requestEdit, requestNew, toast, ui } from '../store/ui'
 import { removeTodos } from '@shared/store-ops'
 import { clearSelection, currentRowIds, selectAll, selectedIds } from './selection'
 
@@ -14,6 +14,14 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   if (!el) return false
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable
+}
+
+/**
+ * 中文输入法选词中的回车。Vue 的 withKeys 只比对 key,不带这个判断,
+ * 选词那一下回车会被当成「保存」——而此时 v-model 还没拿到整段中文。
+ */
+export function isComposingEvent(e: KeyboardEvent): boolean {
+  return e.isComposing || e.keyCode === 229
 }
 
 /** 新建时的预设日期与清单(与旧版 PresetList 行为一致) */
@@ -66,7 +74,20 @@ export function useGlobalKeymap(): void {
       return
     }
 
+    // Escape 从视觉最上层往下关(z-index:CardMenu 120 > Confirm 110 > dialog/settings/help 100)
     if (event.key === 'Escape') {
+      if (ui.cardMenu) {
+        closeCardMenu()
+        return
+      }
+      if (ui.confirm) {
+        ui.confirm = null
+        return
+      }
+      if (ui.meta) {
+        closeMeta()
+        return
+      }
       if (ui.dialog) {
         closeDialog()
         return
@@ -77,14 +98,6 @@ export function useGlobalKeymap(): void {
       }
       if (ui.helpOpen) {
         ui.helpOpen = false
-        return
-      }
-      if (ui.confirm) {
-        ui.confirm = null
-        return
-      }
-      if (ui.cardMenu) {
-        closeCardMenu()
         return
       }
       if (ui.searchOpen) {
@@ -129,14 +142,10 @@ export function useGlobalKeymap(): void {
         handleDelete()
         return
       case 'F2':
-        if (selectedIds.size === 1) {
-          ui.dialog = { mode: 'edit', id: [...selectedIds][0] as string }
-        }
+        if (selectedIds.size === 1) requestEdit([...selectedIds][0] as string)
         return
       case 'Enter':
-        if (selectedIds.size === 1) {
-          ui.dialog = { mode: 'edit', id: [...selectedIds][0] as string }
-        }
+        if (selectedIds.size === 1) requestEdit([...selectedIds][0] as string)
         return
       case '1':
         setView('today')

@@ -11,6 +11,15 @@ import { backupDir, dataDir, storePath } from './paths'
 /** 备份保留份数(超出按修改时间删最旧) */
 const BACKUP_KEEP = 10
 
+/** 损坏文件隔离副本保留份数(超出按修改时间删最旧) */
+const CORRUPT_KEEP = 5
+
+/** 冒烟注入:强制下一次保存失败(验证渲染层「保存失败」提示与状态栏标记真的送达) */
+let forceSaveFail = false
+
+/** 主进程自己那次 loadStore 消费掉的损坏告警,渲染层的 store:load 再取一次 */
+let lastWarning = ''
+
 export interface LoadResult {
   store: Store
   /** 非空时渲染层应弹提示(数据文件损坏被隔离等) */
@@ -44,8 +53,38 @@ export async function loadStore(): Promise<LoadResult> {
       warning += '；且无法重命名原文件，请手动备份后再继续'
     }
     console.error('[store] 数据文件损坏:', err)
+    // 主进程启动时自己会先 loadStore 一次,那次已经把损坏文件改名消费掉了;
+    // 渲染层随后发起的 store:load 读不到任何异常。这里留一份给渲染层取走。
+    lastWarning = warning
+    pruneCorrupt()
     return { store: seedStore(), warning }
   }
+}
+
+/** 取走并清空上一次 loadStore 的损坏告警(渲染层 store:load 用) */
+export function consumeLoadWarning(): string {
+  const w = lastWarning
+  lastWarning = ''
+  return w
+}
+
+/** 隔离副本限量:按 mtime 倒序保留最新 CORRUPT_KEEP 份,删更旧的 */
+function pruneCorrupt(): void {
+  try {
+    const stale = readdirSync(dataDir())
+      .filter((f) => /^todos\.json\.corrupt-\d{8}-\d{6}$/.test(f))
+      .map((f) => join(dataDir(), f))
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+      .slice(CORRUPT_KEEP)
+    for (const f of stale) rmSync(f, { force: true })
+  } catch (err) {
+    console.error('[store] 清理损坏文件副本失败:', err)
+  }
+}
+
+/** 冒烟注入开关:强制 saveStore 抛错 */
+export function setSaveFail(v: boolean): void {
+  forceSaveFail = v
 }
 
 /**
@@ -53,6 +92,7 @@ export async function loadStore(): Promise<LoadResult> {
  * 这里不再重复逐条归一化 —— 5000 条时那一次归一化要 ~115ms,而它每次保存都会跑。
  */
 export async function saveStore(store: Store): Promise<void> {
+  if (forceSaveFail) throw new Error('磁盘写入失败（冒烟注入）')
   const file = storePath()
   mkdirSync(dataDir(), { recursive: true })
   const tmp = `${file}.tmp`

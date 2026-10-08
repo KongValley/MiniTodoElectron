@@ -17,11 +17,15 @@ export const state = reactive({
   path: '',
   warning: '',
   settings: null as Settings | null,
-  ready: false
+  ready: false,
+  /** 上一次保存失败:数据只留在内存,状态栏持续显示直到下一次保存成功 */
+  saveFailed: false
 })
 
+type SaveResult = { ok: boolean; error?: string }
+
 /** 最近一次保存的 Promise,供冒烟的 flush() 等待落盘 */
-let pending: Promise<unknown> = Promise.resolve()
+let pending: Promise<SaveResult> = Promise.resolve({ ok: true })
 
 export function flush(): Promise<unknown> {
   return pending
@@ -41,8 +45,15 @@ export async function commit(next: Store): Promise<void> {
   setStore(next)
   // 以「已序列化的字符串」过 IPC:5000 条时传对象要 85ms(结构化克隆 7.5 万个对象),
   // 传字符串只要 7ms。JSON.stringify 本身 <1ms,净省 ~75ms。
-  pending = window.todoAPI.invoke(CH.storeSave, JSON.stringify(next))
-  await pending
+  pending = window.todoAPI.invoke(CH.storeSave, JSON.stringify(next)) as Promise<SaveResult>
+  const res = await pending
+  // 主进程从不 reject,失败只体现在 ok:false —— 不看它就等于把丢数据藏起来
+  if (res.ok) {
+    state.saveFailed = false
+  } else {
+    state.saveFailed = true
+    toast(`保存失败：${res.error ?? '未知原因'}`)
+  }
 }
 
 /** 纯函数式改数据:mutate(s => addTodo(s, {...})) */

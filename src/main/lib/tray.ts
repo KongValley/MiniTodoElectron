@@ -31,8 +31,14 @@ function refreshMenu(win: BrowserWindow): void {
 
 export function showWindow(win: BrowserWindow): void {
   if (win.isMinimized()) win.restore()
+  // Windows 的 SetForegroundWindow 带前台锁定:从别的程序(资源管理器、任务栏)
+  // 双击进来时,持锁实例没有前台权限,直接 focus() 会被系统拒绝 ——
+  // 结果是窗口确实 show 了却停在后台,用户看着像「点了没反应」。
+  // 借一次临时置顶打断这条锁定,再立刻交还正常层级(不交还就会永久置顶)。
+  win.setAlwaysOnTop(true)
   win.show()
   win.focus()
+  win.setAlwaysOnTop(false)
 }
 
 export function setTodayCount(win: BrowserWindow, n: number): void {

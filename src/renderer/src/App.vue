@@ -7,12 +7,14 @@ import StatusBar from './components/StatusBar.vue'
 import BoardView from './components/BoardView.vue'
 import ListView from './components/ListView.vue'
 import TaskDialog from './components/TaskDialog.vue'
+import GroupListDialog from './components/GroupListDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import HelpDialog from './components/HelpDialog.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
 import CardMenu from './components/CardMenu.vue'
 import Toast from './components/Toast.vue'
 import { init, state, commit } from './store/data'
+import { startClock } from './store/index'
 import { applyTheme, refreshSettings } from './store/settings'
 import { askConfirm, toast, ui } from './store/ui'
 import { mergeStore } from '@shared/store-ops'
@@ -26,9 +28,9 @@ let offBoard: (() => void) | undefined
 let offDialog: (() => void) | undefined
 
 onMounted(async () => {
-  await init()
-  applyTheme(state.settings?.theme ?? 'system')
-
+  // 分钟心跳:让跨零点后按 today() 算出来的计数失效重建
+  startClock()
+  // 监听必须在 init() 之前注册:init 抛错也不会让托盘/菜单触发的 IPC 事件永久失效
   offTheme = window.todoAPI.on(CH.themeSet, (...args: unknown[]) => {
     const theme = args[0] as 'system' | 'light' | 'dark'
     void refreshSettings().then(() => applyTheme(theme))
@@ -64,6 +66,9 @@ onMounted(async () => {
       )
     } else if (kind === 'exported') toast(`已导出到 ${String(args[1] ?? '')}`)
   })
+
+  await init()
+  applyTheme(state.settings?.theme ?? 'system')
 })
 
 onBeforeUnmount(() => {
@@ -85,7 +90,8 @@ onBeforeUnmount(() => {
       <StatusBar />
     </div>
 
-    <TaskDialog v-if="ui.dialog" />
+    <GroupListDialog v-if="ui.meta" :key="ui.meta.seq" />
+    <TaskDialog v-if="ui.dialog" :key="ui.dialog.seq" />
     <SettingsDialog v-if="ui.settingsOpen" />
     <HelpDialog v-if="ui.helpOpen" />
     <ConfirmDialog v-if="ui.confirm" />

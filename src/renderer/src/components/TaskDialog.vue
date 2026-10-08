@@ -17,6 +17,7 @@ import {
 } from '@shared/types'
 import { mutate, state } from '../store/data'
 import { closeDialog, ui } from '../store/ui'
+import { isComposingEvent } from '../lib/keymap'
 import Icon from './Icon.vue'
 
 const dialog = ui.dialog as { mode: 'new' | 'edit'; id?: string; presetDate?: string; presetList?: string }
@@ -52,6 +53,17 @@ const statusOptions = computed(() => [ACTIVE, DONE, DROPPED] as Status[])
 
 onMounted(() => void nextTick(() => titleInput.value?.focus()))
 
+/** 选词中的回车不上屏的是半成品标题,不能当保存 */
+function onEnterSave(e: KeyboardEvent): void {
+  if (isComposingEvent(e)) return
+  save()
+}
+
+function onEnterAddSub(e: KeyboardEvent): void {
+  if (isComposingEvent(e)) return
+  addSub()
+}
+
 function save(): void {
   if (!canSave.value) return
   const patch = {
@@ -60,7 +72,8 @@ function save(): void {
     date: form.noDate ? '' : form.date,
     lid: form.lid,
     prio: form.prio,
-    repeat: { kind: form.repeat },
+    // 带过 anchorDay:不带上就把每月重复的原始日号抹成默认(见 RepeatRule.anchorDay)
+    repeat: { ...existing?.repeat, kind: form.repeat },
     subtasks: form.subtasks.filter((s) => s.title.trim() !== '')
   }
 
@@ -101,7 +114,7 @@ function removeSub(index: number): void {
 
         <label class="field">
           <span class="lbl">任务标题</span>
-          <input ref="titleInput" v-model="form.title" data-testid="dlg-title" placeholder="要做什么？" @keydown.enter="save" />
+          <input ref="titleInput" v-model="form.title" data-testid="dlg-title" placeholder="要做什么？" @keydown.enter="onEnterSave" />
         </label>
 
         <label class="field">
@@ -164,7 +177,7 @@ function removeSub(index: number): void {
             </div>
             <div class="sub-row">
               <span class="plus"><Icon name="plus" :size="13" /></span>
-              <input v-model="newSub" class="sub-title" placeholder="添加子任务，回车确认" @keydown.enter.prevent="addSub" />
+              <input v-model="newSub" class="sub-title" placeholder="添加子任务，回车确认" @keydown.enter.prevent="onEnterAddSub" />
             </div>
           </div>
         </div>

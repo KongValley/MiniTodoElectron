@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { today } from '@shared/dates'
 import { columnsForView } from '@shared/query'
 import { moveCard } from '@shared/store-ops'
 import { importFromDialog, mutate, state } from '../store/data'
 import { index } from '../store/index'
-import { ui } from '../store/ui'
+import { ui, requestNew } from '../store/ui'
 import BoardColumn from './BoardColumn.vue'
 import Icon from './Icon.vue'
 
@@ -20,6 +20,7 @@ const dragPrio = ref(0)
 const horizontal = ref<HTMLElement | null>(null)
 const hScrollLeft = ref(0)
 const hViewportW = ref(1200)
+let ro: ResizeObserver | null = null
 
 /** 只渲染与可视区相交的列(±1 列缓冲),列数很多时收益明显 */
 const visibleColumns = computed(() => {
@@ -40,10 +41,13 @@ onMounted(() => {
   const host = horizontal.value
   if (!host) return
   hViewportW.value = host.clientWidth
-  new ResizeObserver(() => {
+  ro = new ResizeObserver(() => {
     hViewportW.value = host.clientWidth
-  }).observe(host)
+  })
+  ro.observe(host)
 })
+
+onBeforeUnmount(() => ro?.disconnect())
 
 function onScroll(date: string, top: number): void {
   scrollByDate[date] = top
@@ -62,7 +66,7 @@ function onDrop(date: string, index: number): void {
 }
 
 function onAdd(date: string): void {
-  ui.dialog = { mode: 'new', presetDate: date }
+  requestNew({ date })
 }
 
 /** 记录被拖动的卡片 id 与优先级(dragstart 冒泡到看板根节点) */
@@ -116,7 +120,7 @@ function scrollToToday(): void {
       <div class="empty">
         <p>{{ ui.search ? `没有匹配「${ui.search}」的任务` : '此视图暂无排期任务' }}</p>
         <div class="empty-actions">
-          <button class="btn" data-testid="empty-new" @click="ui.dialog = { mode: 'new' }">新建任务</button>
+          <button class="btn" data-testid="empty-new" @click="requestNew()">新建任务</button>
           <button class="btn" data-testid="empty-import" @click="void importFromDialog()">导入旧版数据</button>
           <button class="btn" data-testid="empty-help" @click="ui.helpOpen = true">查看快捷键</button>
         </div>
@@ -138,6 +142,7 @@ function scrollToToday(): void {
           :column="col"
           :scroll-top="scrollByDate[col.date] ?? 0"
           :drag-prio="dragPrio"
+          :drag-id="dragId"
           @scroll="onScroll"
           @drop="onDrop"
           @add="onAdd"

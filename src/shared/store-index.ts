@@ -5,7 +5,7 @@
  * 一次遍历建索引后降到 7 ms。所有循环不变量(日期边界、search 小写化、清单查表)
  * 必须在循环外算一次 —— 写在循环内收益即归零。
  */
-import { ACTIVE, DONE, DROPPED, INBOX_NAME, TRASH, type Store, type TodoGroup, type TodoItem, type TodoList } from './types'
+import { ACTIVE, DONE, DROPPED, INBOX_NAME, TRASH, type Store, type TodoItem, type TodoList } from './types'
 import { addDays, today } from './dates'
 
 export interface BoardColumn {
@@ -20,8 +20,6 @@ export interface StoreIndex {
   columns: BoardColumn[]
   /** 清单 id → 清单(O(1) 取名/取色) */
   listOf: Map<string, TodoList>
-  /** 分组 id → 分组 */
-  groupOf: Map<string, TodoGroup>
   /** 命中搜索的全部任务(不限视图,供列表排序与搜索命中计数用) */
   hits: TodoItem[]
   /** 本次索引对应的搜索词(便于调用方判断是否需要重建) */
@@ -37,8 +35,6 @@ export function buildIndex(store: Store, search: string): StoreIndex {
 
   const listOf = new Map<string, TodoList>()
   for (const l of store.lists) listOf.set(l.id, l)
-  const groupOf = new Map<string, TodoGroup>()
-  for (const g of store.groups) groupOf.set(g.id, g)
 
   const counts: Record<string, number> = Object.create(null)
   for (const v of ['all', 'today', 'tmr', 'week7', 'inbox', 'done', 'dropped', 'trash']) counts[v] = 0
@@ -62,7 +58,9 @@ export function buildIndex(store: Store, search: string): StoreIndex {
       const l = listOf.get(t.lid)
       if (l) {
         counts[`list:${l.id}`] = (counts[`list:${l.id}`] as number) + 1
-        if (groupOf.has(l.gid)) counts[`group:${l.gid}`] = (counts[`group:${l.gid}`] as number) + 1
+        // 不校验分组是否存在:query.ts 的 hitsFor 只按 lid 归集,两端口径必须一致,
+        // 否则角标数与点进去看到的条数对不上
+        counts[`group:${l.gid}`] = (counts[`group:${l.gid}`] as number) + 1
       }
       if (t.date === '') {
         counts['inbox'] = (counts['inbox'] as number) + 1
@@ -85,7 +83,7 @@ export function buildIndex(store: Store, search: string): StoreIndex {
     .sort()
     .map((date) => ({ date, items: byDate.get(date) as TodoItem[] }))
 
-  return { counts, columns, listOf, groupOf, hits, search }
+  return { counts, columns, listOf, hits, search }
 }
 
 

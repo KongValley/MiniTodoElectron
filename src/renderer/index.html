@@ -10,6 +10,9 @@
   </head>
   <body>
     <div id="app"></div>
+    <!-- 加载失败兜底:独立成文件(CSP script-src 'self' 禁内联);
+         构建时会与主 bundle 合并,执行顺序仍在 main.ts 挂载之前 -->
+    <script type="module" src="/src/boot-fallback.js"></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

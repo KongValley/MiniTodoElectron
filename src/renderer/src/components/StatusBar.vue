@@ -15,6 +15,7 @@ const hitCount = computed(() => (ui.search ? index.value.hits.length : null))
     <span class="path" :title="state.path">{{ state.path }}</span>
     <span v-if="hitCount !== null" class="hint">搜索命中 {{ hitCount }} 条</span>
     <span class="spacer" />
+    <span v-if="state.saveFailed" class="save-err" data-testid="save-failed">保存失败，数据未写入磁盘</span>
     <span class="today">今天待办 {{ todayCount }} 项</span>
     <span class="hint">N 新建　Enter/F2 打开　Del 删除　B 切换视图　Ctrl+F 搜索　F5 刷新</span>
   </footer>
@@ -45,6 +46,11 @@ const hitCount = computed(() => (ui.search ? index.value.hits.length : null))
 
 .today {
   color: var(--text);
+}
+
+.save-err {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .hint {

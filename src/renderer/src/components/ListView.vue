@@ -5,8 +5,8 @@ import { sortedByIndex, type ListSort, type ListSortKey } from '@shared/query'
 import { INBOX_NAME, PRIO_COLOR, PRIO_NAME, STATUS_NAME, type TodoItem } from '@shared/types'
 import { completeTodo, removeTodos } from '@shared/store-ops'
 import { importFromDialog, mutate } from '../store/data'
-import { index } from '../store/index'
-import { askConfirm, openCardMenu, ui } from '../store/ui'
+import { clockTick, index } from '../store/index'
+import { askConfirm, openCardMenu, requestEdit, requestNew, ui } from '../store/ui'
 import { clearSelection, selectedIds, setRowSource, setSelection, toggleSelection } from '../lib/selection'
 import { segments } from '../lib/search'
 import { useVirtual } from '../lib/virtual'
@@ -27,7 +27,8 @@ const rows = computed<Row[]>(() => {
   const items = sortedByIndex(index.value, ui.view, ui.listSort)
   // week7 的索引口径是 [今天, 今天+6](不含逾期),因此只分 今天/明天/本周稍后 三段
   if (ui.view !== 'week7') return items.map((item) => ({ kind: 'item', item }) as Row)
-  const t0 = today()
+  // 读 clockTick 建依赖:否则跨零点后这三段的分界还是昨天的
+  const t0 = (clockTick.value, today())
   const t1 = addDays(t0, 1)
   const buckets: [string, TodoItem[]][] = [
     ['今天', []],
@@ -56,6 +57,7 @@ const keyOf = (r: Row): string => (r.kind === 'item' ? r.item.id : `head:${r.lab
 const scroller = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportH = ref(400)
+let ro: ResizeObserver | null = null
 const virtual = useVirtual<Row>({
   items: () => rows.value,
   keyOf,
@@ -88,14 +90,18 @@ onMounted(() => {
   const host = scroller.value
   if (host) viewportH.value = host.clientHeight
   clearSelection()
-  new ResizeObserver(() => {
+  ro = new ResizeObserver(() => {
     if (scroller.value) viewportH.value = scroller.value.clientHeight
-  }).observe(scroller.value as Element)
+  })
+  ro.observe(scroller.value as Element)
   // Ctrl+A 的行源随挂载注册/卸载清空,否则看板下会选到残留行
   setRowSource(() => itemRows.value.map((r) => r.item.id))
 })
 
-onBeforeUnmount(() => setRowSource(() => []))
+onBeforeUnmount(() => {
+  ro?.disconnect()
+  setRowSource(() => [])
+})
 
 function onScroll(): void {
   const host = scroller.value
@@ -166,7 +172,7 @@ function onDeleteSelected(): void {
 }
 
 function onOpen(item: TodoItem): void {
-  ui.dialog = { mode: 'edit', id: item.id }
+  requestEdit(item.id)
 }
 </script>
 
@@ -200,7 +206,7 @@ function onOpen(item: TodoItem): void {
       <div v-if="itemRows.length === 0" class="empty">
         <p>{{ ui.search ? `没有匹配「${ui.search}」的任务` : '此视图暂无任务' }}</p>
         <div class="empty-actions">
-          <button class="btn" data-testid="list-empty-new" @click="ui.dialog = { mode: 'new' }">新建任务</button>
+          <button class="btn" data-testid="list-empty-new" @click="requestNew()">新建任务</button>
           <button class="btn" data-testid="list-empty-import" @click="void importFromDialog()">导入旧版数据</button>
           <button class="btn" data-testid="list-empty-help" @click="ui.helpOpen = true">查看快捷键</button>
         </div>

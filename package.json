@@ -1,6 +1,6 @@
 {
   "name": "mini-todo",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "迷你待办 —— 基于 Electron 的看板式待办管理工具",
   "license": "GPL-3.0-or-later",
   "private": true,
@@ -12,7 +12,7 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "node --import ./scripts/ts-resolve-hook.mjs --experimental-strip-types --test src/shared/store-ops.test.ts",
     "icon": "node scripts/make-icon.mjs",
-    "smoke": "node scripts/run-smokes.mjs",
+    "smoke": "npm run build && node scripts/run-smokes.mjs",
     "perf": "node scripts/perf-compare.mjs current 3",
     "perf:data": "node scripts/gen-perf-data.mjs",
     "dist:win7-32": "npm run build && node scripts/package-win.mjs win7-ia32",
@@ -36,6 +36,7 @@
     "appId": "com.locale.minitodo",
     "productName": "迷你待办",
     "npmRebuild": false,
+    "electronLanguages": ["zh-CN", "en-US"],
     "directories": {
       "output": "release",
       "buildResources": "resources"
@@ -52,7 +53,7 @@
     "win": {
       "target": [
         "nsis",
-        "portable"
+        "zip"
       ],
       "icon": "resources/icon.png"
     },

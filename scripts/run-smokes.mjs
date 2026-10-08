@@ -36,7 +36,9 @@ const scripts = [
   'step24-jump-today.js',
   'step25-select-all.js',
   'step26-icons.js',
-  'step27-renderer-crash.js'
+  'step27-renderer-crash.js',
+  'step28-save-fail.js',
+  'step29-sidebar-manage.js'
 ]
 
 if (!existsSync(electron)) {
@@ -53,6 +55,9 @@ const STEP_TIMEOUTS = {
 // 注入渲染进程崩溃的步骤(主进程侧强制崩溃,用来验证崩溃自愈)。
 // 等待时间必须大于 index.ts 里 1200ms 的注入延迟 + 重载耗时,否则会在恢复完成前就收尾截图。
 const CRASH_PROBE = { 'step27-renderer-crash.js': { env: '1', settleMs: '4000' } }
+
+// 注入保存失败(验证「保存失败」提示与状态栏标记真的送达用户)。见 ipc.ts 的 TODO_SMOKE_SAVE_FAIL。
+const SAVE_FAIL_PROBE = { 'step28-save-fail.js': { env: '1', settleMs: '300' } }
 
 // 主进程侧断言(mainChecks):渲染层脚本无法观测的窗口/托盘/通知状态
 const MAIN_ASSERTIONS = {
@@ -71,11 +76,15 @@ const MAIN_ASSERTIONS = {
   'step18-single-instance.js': (mc) => [
     ['本进程持有单实例锁', mc.singleInstance && mc.singleInstance.hasLock === true],
     ['窗口确实被隐藏(前置条件)', mc.singleInstance && mc.singleInstance.hiddenBefore === false],
-    ['再次启动后窗口恢复可见', mc.singleInstance && mc.singleInstance.visibleAfter === true]
+    ['再次启动后窗口恢复可见', mc.singleInstance && mc.singleInstance.visibleAfter === true],
+    ['置顶仅为打断前台锁定而临时开启,已交还', mc.singleInstance && mc.singleInstance.alwaysOnTopAfter === false]
   ],
   'step27-renderer-crash.js': (mc) => [
     ['崩溃后窗口仍在', mc.windowAlive === true],
     ['渲染进程崩溃被检测并自动重载', mc.rendererRecovered === true]
+  ],
+  'step28-save-fail.js': (mc) => [
+    ['注入的保存确实失败了(至少两次)', mc.saveFailures >= 2]
   ]
 }
 
@@ -100,7 +109,8 @@ for (const script of scripts) {
       TODO_SMOKE_CLOSE_PROBE: name === 'step16-tray-notify' ? '1' : '0',
       TODO_SMOKE_SINGLE_INSTANCE: name === 'step18-single-instance' ? '1' : '0',
       TODO_SMOKE_CRASH_PROBE: CRASH_PROBE[script]?.env ?? '0',
-      TODO_SMOKE_SETTLE: CRASH_PROBE[script]?.settleMs ?? '800',
+      TODO_SMOKE_SAVE_FAIL: SAVE_FAIL_PROBE[script]?.env ?? '0',
+      TODO_SMOKE_SETTLE: SAVE_FAIL_PROBE[script]?.settleMs ?? CRASH_PROBE[script]?.settleMs ?? '800',
       TODO_SMOKE_TIMEOUT: STEP_TIMEOUTS[script] ?? '60000'
     },
     stdio: 'ignore'
