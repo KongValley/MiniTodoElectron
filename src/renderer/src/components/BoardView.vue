@@ -6,6 +6,7 @@ import { importFromDialog, mutate, state } from '../store/data'
 import { index } from '../store/index'
 import { ui } from '../store/ui'
 import BoardColumn from './BoardColumn.vue'
+import Icon from './Icon.vue'
 
 const COL_W = 300
 
@@ -120,7 +121,13 @@ function scrollToToday(): void {
       </div>
     </template>
     <template v-else>
-      <button class="today" data-testid="board-today" title="滚动到今天" @click="scrollToToday">今天</button>
+      <div class="bar">
+        <span class="bar-title">看板</span>
+        <span class="spacer" />
+        <button class="today" data-testid="board-today" title="滚动到今天" @click="scrollToToday">
+          <Icon name="today" :size="13" />今天
+        </button>
+      </div>
       <div ref="horizontal" class="columns" data-testid="board-columns" @scroll="onScrollH">
         <div :style="{ flex: `0 0 ${padLeft}px` }" />
         <BoardColumn
@@ -143,15 +150,33 @@ function scrollToToday(): void {
 .board {
   height: 100%;
   overflow: hidden;
-  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 看板工具行:标题 + 「今天」快捷滚动,与列头同色同高,不遮挡内容 */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
 }
 
 .today {
-  position: absolute;
-  top: 10px;
-  right: 16px;
-  z-index: 5;
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
   border-radius: 6px;
   border: 1px solid var(--field-line);
   background: var(--card);
@@ -162,11 +187,13 @@ function scrollToToday(): void {
 .today:hover {
   background: var(--hover);
   color: var(--accent);
+  border-color: var(--accent);
 }
 
 .columns {
   display: flex;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -196,5 +223,9 @@ function scrollToToday(): void {
 
 .btn:hover {
   background: var(--hover);
+}
+
+.spacer {
+  flex: 1 1 auto;
 }
 </style>
