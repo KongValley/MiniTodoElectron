@@ -26,7 +26,8 @@ const scripts = [
   'step14-keymap.js',
   'step15-window.js',
   'step16-tray-notify.js',
-  'step17-virtual.js'
+  'step17-virtual.js',
+  'step18-single-instance.js'
 ]
 
 if (!existsSync(electron)) {
@@ -53,6 +54,11 @@ const MAIN_ASSERTIONS = {
     ['通知已发出并记录日期', mc.notify && mc.notify.lastNotifiedDate.length === 10],
     ['通知内容含待办条数', mc.notify && /今天有 \d+ 项待办/.test(mc.notify.lastBody)],
     ['关闭 = 隐藏到托盘(不退出)', mc.closeProbe && mc.closeProbe.before === true && mc.closeProbe.afterVisible === false && mc.closeProbe.destroyed === false]
+  ],
+  'step18-single-instance.js': (mc) => [
+    ['本进程持有单实例锁', mc.singleInstance && mc.singleInstance.hasLock === true],
+    ['窗口确实被隐藏(前置条件)', mc.singleInstance && mc.singleInstance.hiddenBefore === false],
+    ['再次启动后窗口恢复可见', mc.singleInstance && mc.singleInstance.visibleAfter === true]
   ]
 }
 
@@ -75,6 +81,7 @@ for (const script of scripts) {
       TODO_DATA_DIR: dataDir,
       TODO_SMOKE_NOTIFY: name === 'step16-tray-notify' ? '1' : '0',
       TODO_SMOKE_CLOSE_PROBE: name === 'step16-tray-notify' ? '1' : '0',
+      TODO_SMOKE_SINGLE_INSTANCE: name === 'step18-single-instance' ? '1' : '0',
       TODO_SMOKE_TIMEOUT: STEP_TIMEOUTS[script] ?? '60000'
     },
     stdio: 'ignore'

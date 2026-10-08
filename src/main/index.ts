@@ -9,7 +9,7 @@ import { buildMenu } from './menu'
 import { applyDataDirOverride, dataDir, storePath } from './lib/paths'
 import { loadStore, saveStore } from './lib/store'
 import { loadSettings, saveSettings } from './lib/settings'
-import { createTray, destroyTray, setTodayCount, trayExists } from './lib/tray'
+import { createTray, destroyTray, setTodayCount, showWindow, trayExists } from './lib/tray'
 import { runNotifyTick, startNotifyLoop, stopNotifyLoop } from './lib/notify'
 import { isSmokeMode, runSmoke } from './smoke'
 
@@ -17,6 +17,26 @@ import { isSmokeMode, runSmoke } from './smoke'
 app.setPath('userData', join(app.getPath('appData'), 'MiniTodoElectron'))
 // 冒烟模式:TODO_DATA_DIR 覆盖(每步独立目录)
 applyDataDirOverride()
+
+// Windows 任务栏归组与通知身份标识(与 package.json 的 build.appId 一致)。
+// 缺了它,任务栏会按 exe 路径归组,便携版换目录或重复启动时容易分裂出多个图标。
+app.setAppUserModelId('com.locale.minitodo')
+
+/**
+ * 单实例锁:重复双击(或连点快捷方式)时不再开第二个进程。
+ * 锁按 userData 目录区分,因此冒烟/基准脚本用各自独立的 --user-data-dir 时互不干扰。
+ * 必须在重定向 userData 之后调用,否则锁会落在默认目录上。
+ */
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  // 第二个实例直接退出:窗口的显示与前置交给已在运行的实例处理
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    // 用户又启动了一次 → 把已有窗口显示出来并置顶(而不是开新窗口/新图标)
+    if (mainWindow && !mainWindow.isDestroyed()) showWindow(mainWindow)
+  })
+}
 
 // 内网 32 位老机器优先稳定:禁用硬件加速(避免老显卡驱动导致的黑屏/崩溃)
 app.disableHardwareAcceleration()
@@ -108,7 +128,7 @@ function createWindow(): void {
   }
 }
 
-/** 冒烟模式下的主进程侧断言(托盘存在 / 原生边框 / 通知链路) */
+/** 冒烟模式下的主进程侧断言(托盘存在 / 原生边框 / 通知链路 / 单实例) */
 function mainChecks(): Record<string, unknown> {
   const win = mainWindow
   // Electron 无 isFrameless();无边框窗口的 contentBounds 与 bounds 完全相等
@@ -130,6 +150,21 @@ function mainChecks(): Record<string, unknown> {
     closeProbe = { before, afterVisible: win.isVisible(), destroyed: win.isDestroyed() }
   }
 
+  // 单实例:持有锁的进程应报告 hasLock=true;再把窗口藏起来模拟"用户看不到窗口",
+  // 然后触发一次 second-instance(等价于用户又点了一次图标),窗口应重新可见。
+  let singleInstance: Record<string, unknown> | null = null
+  if (win && process.env['TODO_SMOKE_SINGLE_INSTANCE'] === '1') {
+    win.hide()
+    const hiddenBefore = win.isVisible()
+    app.emit('second-instance', {} as never, [] as never, {} as never)
+    singleInstance = {
+      hasLock: app.hasSingleInstanceLock(),
+      hiddenBefore,
+      visibleAfter: win.isVisible(),
+      minimizedAfter: win.isMinimized()
+    }
+  }
+
   return {
     trayExists: trayExists(),
     frameless,
@@ -137,6 +172,7 @@ function mainChecks(): Record<string, unknown> {
     minSize: win ? win.getMinimumSize() : null,
     dataDir: dataDir(),
     closeProbe,
+    singleInstance,
     notify: notify
       ? {
           requested: process.env['TODO_SMOKE_NOTIFY'] === '1',
@@ -150,43 +186,47 @@ function mainChecks(): Record<string, unknown> {
 
 const EMPTY_STORE: Store = { version: 2, groups: [], lists: [], todos: [] }
 
-app.whenReady().then(async () => {
-  registerAppProtocol()
-  registerIpc(() => mainWindow)
-  createWindow()
+// 没拿到单实例锁的进程不做任何初始化:不建窗口、不建托盘、不起通知轮询。
+// (上面已调 app.quit(),这里直接跳过整个启动流程)
+if (gotSingleInstanceLock) {
+  app.whenReady().then(async () => {
+    registerAppProtocol()
+    registerIpc(() => mainWindow)
+    createWindow()
 
-  const win = mainWindow as BrowserWindow
-  const loaded = await loadStore()
-  loadSettings()
-  // 首次运行(无数据文件)写入示例数据,用户可直接改/清空该文件
-  if (!existsSync(storePath())) await saveStore(loaded.store)
-  // 托盘在冒烟模式下也创建(step16 要断言),通知轮询只在正式运行启动
-  createTray(win)
+    const win = mainWindow as BrowserWindow
+    const loaded = await loadStore()
+    loadSettings()
+    // 首次运行(无数据文件)写入示例数据,用户可直接改/清空该文件
+    if (!existsSync(storePath())) await saveStore(loaded.store)
+    // 托盘在冒烟模式下也创建(step16 要断言),通知轮询只在正式运行启动
+    createTray(win)
 
-  win.webContents.once('did-finish-load', () => {
-    setTodayCount(win, countDue(loaded.store))
-    if (loaded.warning) win.webContents.send(CH.uiOpenDialog, 'warning', loaded.warning)
-  })
-
-  if (isSmokeMode()) {
-    void runSmoke(win, mainChecks)
-    return
-  }
-
-  startNotifyLoop(win, () => countDue(getCurrentStore() ?? EMPTY_STORE))
-
-  Menu.setApplicationMenu(
-    buildMenu(win, {
-      importStore: (w, file) => void menuImport(w, file),
-      exportStore: (w) => void menuExport(w)
+    win.webContents.once('did-finish-load', () => {
+      setTodayCount(win, countDue(loaded.store))
+      if (loaded.warning) win.webContents.send(CH.uiOpenDialog, 'warning', loaded.warning)
     })
-  )
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    else win.show()
+    if (isSmokeMode()) {
+      void runSmoke(win, mainChecks)
+      return
+    }
+
+    startNotifyLoop(win, () => countDue(getCurrentStore() ?? EMPTY_STORE))
+
+    Menu.setApplicationMenu(
+      buildMenu(win, {
+        importStore: (w, file) => void menuImport(w, file),
+        exportStore: (w) => void menuExport(w)
+      })
+    )
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      else showWindow(win)
+    })
   })
-})
+}
 
 app.on('before-quit', () => {
   forceQuit = true
