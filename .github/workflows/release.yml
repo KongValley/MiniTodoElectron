@@ -72,16 +72,27 @@ jobs:
           # 产物文件名内嵌这个版本号,所以要同步写进 package.json
           npm version "$VERSION" --no-git-tag-version --allow-same-version >/dev/null
 
+      # 必须带 GH_TOKEN:仓库虽是公开的,但 gh CLI 没有凭据时连下载都会报
+      # "could not find any host configurations"。取不到就硬失败 —— 静默产出一个
+      # 缺补丁的 Win7 裸包,比构建失败危险得多(它在 Win7 机器上根本起不来)。
       - name: 取 Win7 前置补丁
         if: startsWith(matrix.combo, 'win7-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
           ARCH_TOKEN=x86; case "${{ matrix.combo }}" in *-x64) ARCH_TOKEN=x64;; esac
           mkdir -p win7-patches
-          if gh release download "$PATCHES_TAG" --pattern "*${ARCH_TOKEN}*.msu" --dir win7-patches --clobber; then
-            echo "已取补丁:$(ls win7-patches | wc -l) 个"
-          else
-            echo "::warning::未找到 $PATCHES_TAG Release(gh release create $PATCHES_TAG --title 'Win7 前置补丁源' --notes 'CI 构建时按架构取用,勿删' win7-patches/*.msu),本架构包将不含「前置补丁」目录"
+          if ! gh release download "$PATCHES_TAG" --pattern "*${ARCH_TOKEN}*.msu" --dir win7-patches --clobber; then
+            echo "::error::取不到 $PATCHES_TAG Release 的 ${ARCH_TOKEN} 补丁。一次性准备:gh release create $PATCHES_TAG --title 'Win7 前置补丁源' --notes 'CI 构建时按架构取用,勿删' win7-patches/*.msu"
+            exit 1
+          fi
+          N=$(ls win7-patches/*.msu | wc -l)
+          echo "已取补丁:$N 个(${ARCH_TOKEN})"
+          if [ "$N" -ne 4 ]; then
+            echo "::error::预期 4 个 .msu,实际 $N 个 —— 补丁源不完整,拒绝产出裸包"
+            ls -l win7-patches
+            exit 1
           fi
 
       - name: 构建

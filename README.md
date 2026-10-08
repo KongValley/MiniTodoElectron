@@ -194,7 +194,7 @@ gh release create win7-patches --title "Win7 前置补丁源" --notes "CI 构建
 
 流水线做的事：`npm ci` → 按架构下载对应 `.msu` → `npm run build` → `node scripts/package-win.mjs <架构>` → 汇总成 Release 资产（8 个 exe + 4 个 `.msu` + 一份《安装说明.txt》）。tag 已存在时会先删旧 Release 再重建，方便重跑。
 
-找不到 `win7-patches` 这个 Release 时，流水线只发一条 warning 不失败 —— 代价是那两个 Win7 包不含「前置补丁」目录，属于裸包。内网分发务必先把种子打好。
+补丁取不到时流水线**直接失败**，不会产出一个缺补丁的 Win7 裸包 —— 那种包在 Win7 机器上根本起不来，静默发布比构建失败危险得多。同理，某个架构取到的 `.msu` 不等于 4 个也会失败。
 
 ## 代码结构
 
